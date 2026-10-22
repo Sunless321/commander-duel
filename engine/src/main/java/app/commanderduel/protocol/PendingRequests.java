@@ -87,19 +87,24 @@ public final class PendingRequests {
         return pending;
     }
 
-    public <R> PendingValue<R> openValue(String kind, Predicate<R> validator) {
+    public <R> PendingValue<R> openValue(String kind, Class<R> type, Predicate<R> validator) {
         PendingValue<R> pending = new PendingValue<>("r" + counter.getAndIncrement());
         open.put(pending.requestId, new Entry() {
             @Override @SuppressWarnings("unchecked")
             public Object validate(Object answer) {
-                boolean valid;
-                try {
-                    valid = answer != null && validator.test((R) answer);
-                } catch (ClassCastException e) {
-                    valid = false;
+                Object value = answer;
+                if (type == Integer.class && value instanceof Number n) {
+                    double d = n.doubleValue();
+                    if (d != Math.rint(d) || Math.abs(d) > Integer.MAX_VALUE) {
+                        throw new IllegalArgumentException("invalid " + kind + " value (not an integer): " + answer);
+                    }
+                    value = (int) d;
                 }
-                if (!valid) throw new IllegalArgumentException("invalid " + kind + " value: " + answer);
-                return answer;
+                if (!type.isInstance(value)) {
+                    throw new IllegalArgumentException("invalid " + kind + " value: expected " + type.getSimpleName() + ", got " + answer);
+                }
+                if (!validator.test((R) value)) throw new IllegalArgumentException("invalid " + kind + " value: " + answer);
+                return value;
             }
 
             @Override @SuppressWarnings("unchecked")
