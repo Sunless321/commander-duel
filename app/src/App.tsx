@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { client } from './net/engineClient';
 import type { DuelBridge, EngineEndpoint } from './net/protocol';
+import { Decks } from './screens/Decks';
 import { useStore } from './state/store';
 
 declare global {
@@ -46,6 +47,7 @@ export function App() {
     const off = client.on((m) => {
       useStore.getState().handle(m);
       if (m.type === 'ready') client.send({ type: 'listLobby' });
+      if (m.type === 'importResult' && m.ok) client.send({ type: 'listLobby' });
       if (m.type === 'lobby') console.log(`lobby: ${m.precons.length} precons`);
     });
     let cancelled = false;
@@ -57,9 +59,19 @@ export function App() {
   }, []);
 
   if (screen === 'engineStopped') return <EngineStopped />;
+  if (!lobby) return <div style={{ padding: 32 }}>Starting engine…</div>;
+  if (screen === 'setup') return <SetupPlaceholder />;
+  return <Decks />;
+}
+
+// Replaced by the real Setup screen in Task 10.
+function SetupPlaceholder() {
+  const deck = useStore((s) => s.selectedDeck);
   return (
     <div style={{ padding: 32 }}>
-      {lobby ? `Engine connected · ${lobby.precons.length} precons` : 'Starting engine…'}
+      <h1>Setup</h1>
+      <p>Chosen deck: {deck?.name ?? 'none'}</p>
+      <button onClick={() => useStore.getState().setScreen('decks')}>Back</button>
     </div>
   );
 }

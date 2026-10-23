@@ -21,6 +21,8 @@ export interface StoreState {
   requests: RequestMsg[];
   lastRejection: RejectedMsg | null;
   lastImport: ImportResultMsg | null;
+  selectedDeck: DeckSummary | null;
+  selectDeck: (d: DeckSummary | null) => void;
   gameOver: GameOverMsg | null;
   lastInfo: string | null;
   lastError: string | null;
@@ -48,6 +50,7 @@ export const useStore = create<StoreState>((set) => ({
   lobby: null,
   ...freshGame(),
   lastImport: null,
+  selectedDeck: null,
   lastInfo: null,
   lastError: null,
   respondMode: 'smart',
@@ -85,6 +88,7 @@ export const useStore = create<StoreState>((set) => ({
     }),
 
   setScreen: (screen) => set({ screen }),
+  selectDeck: (selectedDeck) => set({ selectedDeck }),
   setRespondMode: (respondMode) => set({ respondMode }),
   removeRequest: (requestId) => set((s) => ({ requests: s.requests.filter((r) => r.requestId !== requestId) })),
   resetGame: () => set(freshGame()),

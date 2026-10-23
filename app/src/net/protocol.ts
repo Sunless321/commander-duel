@@ -162,13 +162,9 @@ export type UiMessage =
 
 // ---------------------------------------------------------------- Electron bridge
 
-export interface ArchidektResult {
-  ok: boolean;
-  name?: string;
-  commanders?: string[];
-  main?: { count: number; name: string }[];
-  error?: string;
-}
+export type ArchidektResult =
+  | { ok: true; name: string; commanders: string[]; main: { count: number; name: string }[] }
+  | { ok: false; error: string };
 
 export interface EngineEndpoint { port: number; token: string }
 

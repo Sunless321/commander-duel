@@ -2,6 +2,7 @@ import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { app, BrowserWindow, ipcMain } from 'electron';
+import { fetchArchidekt, parseDeckId, parseTextList } from './archidekt';
 import { startEngine, type EngineOptions, type RunningEngine } from './engineProcess';
 
 // Must happen before app is ready so userData resolves to %APPDATA%\Commander Duel.
@@ -71,6 +72,11 @@ function createWindow(): void {
 app.whenReady().then(() => {
   ipcMain.handle('engine:get', async () => endpoint(await (engine ?? launchEngine())));
   ipcMain.handle('engine:restart', async () => endpoint(await launchEngine()));
+  ipcMain.handle('deck:import', async (_e, input: unknown) => {
+    const text = typeof input === 'string' ? input : '';
+    const id = parseDeckId(text);
+    return id ? fetchArchidekt(id) : parseTextList(text);
+  });
   void launchEngine().catch((e) => console.error('engine failed to start', e));
   createWindow();
 });
