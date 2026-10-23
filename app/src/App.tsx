@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { client } from './net/engineClient';
 import type { DuelBridge, EngineEndpoint } from './net/protocol';
 import { Decks } from './screens/Decks';
+import { Setup } from './screens/Setup';
 import { useStore } from './state/store';
 
 declare global {
@@ -60,18 +61,22 @@ export function App() {
 
   if (screen === 'engineStopped') return <EngineStopped />;
   if (!lobby) return <div style={{ padding: 32 }}>Starting engine…</div>;
-  if (screen === 'setup') return <SetupPlaceholder />;
+  if (screen === 'setup') return <Setup />;
+  if (screen === 'board') return <BoardPlaceholder />;
   return <Decks />;
 }
 
-// Replaced by the real Setup screen in Task 10.
-function SetupPlaceholder() {
-  const deck = useStore((s) => s.selectedDeck);
+// Replaced by the real board in Task 11.
+function BoardPlaceholder() {
+  const game = useStore((s) => s.game);
+  const prompt = useStore((s) => s.prompt);
+  const request = useStore((s) => s.requests[0]);
   return (
     <div style={{ padding: 32 }}>
-      <h1>Setup</h1>
-      <p>Chosen deck: {deck?.name ?? 'none'}</p>
-      <button onClick={() => useStore.getState().setScreen('decks')}>Back</button>
+      <h1>Board</h1>
+      <p>{game ? `Turn ${game.turn} - ${game.phase}` : "Waiting for the first game state…"}</p>
+      {prompt && <p>Prompt: {prompt.message}</p>}
+      {request && <p>Request: {request.title} {request.message}</p>}
     </div>
   );
 }
