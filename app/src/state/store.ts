@@ -8,6 +8,25 @@ import type { ClientEvent } from '../net/engineClient';
 export type Screen = 'decks' | 'setup' | 'board' | 'gameOver' | 'engineStopped';
 export type RespondMode = 'always' | 'smart' | 'never';
 
+const MODE_KEY = 'commanderDuel.respondMode';
+const TIP_KEY = 'commanderDuel.respondTipDismissed';
+
+function loadMode(): RespondMode {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    if (v === 'always' || v === 'smart' || v === 'never') return v;
+  } catch { /* storage unavailable */ }
+  return 'smart';
+}
+
+function loadTipDismissed(): boolean {
+  try {
+    return localStorage.getItem(TIP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export interface Lobby { precons: PreconSummary[]; decks: DeckSummary[] }
 export type StartGameMsg = Extract<UiMessage, { type: 'startGame' }>;
 export interface InfoNote { title: string | null; message: string }
@@ -36,9 +55,11 @@ export interface StoreState {
   /** The last startGame sent, for "Play again". */
   lastStart: StartGameMsg | null;
   respondMode: RespondMode;
+  respondTipDismissed: boolean;
   handle: (m: ClientEvent) => void;
   setScreen: (s: Screen) => void;
   setRespondMode: (m: RespondMode) => void;
+  dismissRespondTip: () => void;
   removeRequest: (requestId: string) => void;
   /** Call right after sending an answer: the request leaves the queue unless the engine rejects it. */
   markAnswered: (requestId: string) => void;
@@ -69,7 +90,8 @@ export const useStore = create<StoreState>((set) => ({
   lastInfo: null,
   lastError: null,
   lastStart: null,
-  respondMode: 'smart',
+  respondMode: loadMode(),
+  respondTipDismissed: loadTipDismissed(),
 
   handle: (m) =>
     set((s) => {
@@ -113,7 +135,14 @@ export const useStore = create<StoreState>((set) => ({
 
   setScreen: (screen) => set({ screen }),
   selectDeck: (selectedDeck) => set({ selectedDeck }),
-  setRespondMode: (respondMode) => set({ respondMode }),
+  setRespondMode: (respondMode) => {
+    try { localStorage.setItem(MODE_KEY, respondMode); } catch { /* storage unavailable */ }
+    set({ respondMode });
+  },
+  dismissRespondTip: () => {
+    try { localStorage.setItem(TIP_KEY, '1'); } catch { /* storage unavailable */ }
+    set({ respondTipDismissed: true });
+  },
   removeRequest: (requestId) => set((s) => ({ requests: s.requests.filter((r) => r.requestId !== requestId) })),
   markAnswered: (requestId) =>
     set((s) => {

@@ -1,0 +1,34 @@
+/* Timing popup (mockup screen 2). Uses the board's palette variables. */
+.popup-backdrop { z-index: 8; }
+.response-popup {
+  --panel: #121c31; --border: #24324f; --gold: #d4a64a; --text: #e8ecf4; --muted: #9fb0cc;
+  width: min(700px, 94vw); max-height: 92vh; overflow: auto; box-sizing: border-box; background: var(--panel);
+  border: 1px solid var(--gold); border-radius: 16px; padding: 24px 28px; color: var(--text);
+  display: flex; flex-direction: column; gap: 18px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+.popup-kicker { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); }
+.popup-title { margin: 4px 0 0; font: 700 26px Cinzel, Georgia, serif; }
+.popup-item {
+  display: flex; align-items: center; gap: 18px; background: #0d1526; border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 18px;
+}
+.popup-text { margin: 0; font-size: 14px; line-height: 1.5; color: #d5ddeb; }
+.popup-target { padding: 6px 10px; border: 1px solid var(--gold); border-radius: 8px; font-size: 13px; }
+.popup-tip {
+  position: relative; background: #13294a; border: 1px solid #2f5f99; border-radius: 12px; padding: 12px 34px 12px 16px;
+  display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.5; color: #cfe8ff;
+}
+.popup-tip-title { font-weight: 700; }
+.popup-tip .toast-close { position: absolute; top: 8px; right: 10px; }
+.popup-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.popup-responses { display: flex; flex-direction: column; gap: 10px; }
+.popup-cards { display: flex; flex-wrap: wrap; gap: 14px; padding: 6px; }
+.popup-actions { align-items: center; }
+.popup-status { flex-grow: 1; font-size: 12px; color: var(--muted); }
+.popup-ok-label { font-weight: 400; opacity: 0.8; }
+.popup-modes { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
+.pill {
+  padding: 6px 12px; border-radius: 999px; font: 600 12px Inter, system-ui, sans-serif; cursor: pointer;
+  background: #0d1526; color: var(--muted); border: 1px solid #33405e;
+}
+.pill.on { background: #3a2f14; color: #f2d58a; border-color: var(--gold); }

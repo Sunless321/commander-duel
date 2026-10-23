@@ -7,6 +7,7 @@ import { Hand } from '../components/Hand';
 import { PhaseBar } from '../components/PhaseBar';
 import { PlayerPanel, type ViewZone } from '../components/PlayerPanel';
 import { PromptBar } from '../components/PromptBar';
+import { ResponsePopup } from '../components/ResponsePopup';
 import { RequestDialog } from '../components/RequestDialog';
 import { StackView } from '../components/StackView';
 import { ZoneViewer } from '../components/ZoneViewer';
@@ -86,6 +87,7 @@ export function Board() {
       {game && flags && openZone && (
         <ZoneViewer game={game} playerId={openZone.playerId} zone={openZone.zone} flags={flags} onClose={() => setOpenZone(null)} />
       )}
+      <ResponsePopup />
       <RequestDialog />
     </div>
   );
