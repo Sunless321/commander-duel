@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { client } from './net/engineClient';
 import type { DuelBridge, EngineEndpoint } from './net/protocol';
+import { Board } from './screens/Board';
 import { Decks } from './screens/Decks';
+import { GameOver } from './screens/GameOver';
 import { Setup } from './screens/Setup';
 import { useStore } from './state/store';
 
@@ -62,21 +64,7 @@ export function App() {
   if (screen === 'engineStopped') return <EngineStopped />;
   if (!lobby) return <div style={{ padding: 32 }}>Starting engine…</div>;
   if (screen === 'setup') return <Setup />;
-  if (screen === 'board') return <BoardPlaceholder />;
+  if (screen === 'board') return <Board />;
+  if (screen === 'gameOver') return <GameOver />;
   return <Decks />;
-}
-
-// Replaced by the real board in Task 11.
-function BoardPlaceholder() {
-  const game = useStore((s) => s.game);
-  const prompt = useStore((s) => s.prompt);
-  const request = useStore((s) => s.requests[0]);
-  return (
-    <div style={{ padding: 32 }}>
-      <h1>Board</h1>
-      <p>{game ? `Turn ${game.turn} - ${game.phase}` : "Waiting for the first game state…"}</p>
-      {prompt && <p>Prompt: {prompt.message}</p>}
-      {request && <p>Request: {request.title} {request.message}</p>}
-    </div>
-  );
 }

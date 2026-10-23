@@ -155,7 +155,7 @@ export function Setup() {
     }
     setError(null);
     useStore.getState().resetGame();
-    useStore.setState({ lastError: null });
+    useStore.setState({ lastError: null, lastStart: msg });
     setStarting(true);
     client.send(msg);
   };

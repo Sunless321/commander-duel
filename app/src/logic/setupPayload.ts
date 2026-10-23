@@ -4,7 +4,7 @@ export interface BotChoice { deck: BotDeck; difficulty: Difficulty }
 
 export const defaultBot = (): BotChoice => ({ deck: { kind: 'randomPrecon' }, difficulty: 'NORMAL' });
 
-export function buildStartGame(deckId: string, bots: BotChoice[]): UiMessage {
+export function buildStartGame(deckId: string, bots: BotChoice[]): Extract<UiMessage, { type: 'startGame' }> {
   if (!deckId) throw new Error('Pick a deck to play');
   if (bots.length < 1 || bots.length > 3) throw new Error('A pod needs 1 to 3 bots');
   return {
