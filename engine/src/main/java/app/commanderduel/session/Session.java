@@ -28,6 +28,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Routes protocol messages from the (single) UI client to the deck store and the running game. */
 public class Session {
@@ -44,7 +46,8 @@ public class Session {
     private volatile Transport client;
     private volatile BridgeGuiGame gui;
     private volatile HostedMatch match;
-    private volatile boolean starting;
+    private final AtomicInteger pendingStarts = new AtomicInteger();
+    private volatile boolean clientGone;
 
     public Session(DeckStore decks) {
         this.decks = decks;
@@ -52,11 +55,13 @@ public class Session {
 
     /** A UI client connected; engine messages go to it from now on. */
     public void onConnect(Transport transport) {
+        clientGone = false;
         client = transport;
     }
 
     /** The client is gone: a running game is conceded for the human so the game thread is released. */
     public void onDisconnect() {
+        clientGone = true;
         client = null;
         BridgeGuiGame g = gui;
         if (g != null && gameRunning()) {
@@ -71,7 +76,7 @@ public class Session {
 
     /** True from the moment a startGame is accepted until its game is over. */
     public boolean gameRunning() {
-        if (starting) {
+        if (pendingStarts.get() > 0) {
             return true;
         }
         HostedMatch m = match;
@@ -186,39 +191,83 @@ public class Session {
             error(e.getMessage() == null ? "bad startGame request" : e.getMessage());
             return;
         }
-        starting = true;
+        pendingStarts.incrementAndGet();
         starter.execute(() -> {
             try {
-                concedeRunningGame();
-                BridgeGuiGame g = new BridgeGuiGame(this::sendRaw, new PendingRequests());
+                if (!concedeRunningGame()) {
+                    error("Previous game is still ending, try again");
+                    return;
+                }
+                AtomicReference<BridgeGuiGame> self = new AtomicReference<>();
+                // Only the session's current game may talk to the client; a stale game's output is dropped.
+                BridgeGuiGame g = new BridgeGuiGame(json -> {
+                    if (gui == self.get()) {
+                        sendRaw(json);
+                    }
+                }, new PendingRequests());
+                self.set(g);
                 gui = g;
                 match = MatchStarter.start(you, bots, g);
+                // A disconnect during the start window found no game to concede; do it now.
+                if (clientGone && awaitGame(match)) {
+                    g.onAction("concede", null, null);
+                    awaitGameOver(match.getGame());
+                }
             } catch (RuntimeException | AssertionError e) {
                 e.printStackTrace();
                 error("could not start game: " + e);
             } finally {
-                starting = false;
+                pendingStarts.decrementAndGet();
             }
         });
     }
 
-    /** Concedes the previous game, if any, and waits for it to end. */
-    private void concedeRunningGame() {
+    /** Concedes the previous game, if any. False when it is still running after the wait. */
+    private boolean concedeRunningGame() {
         BridgeGuiGame g = gui;
         HostedMatch m = match;
-        Game game = m == null ? null : m.getGame();
-        if (g == null || game == null || game.isGameOver()) {
-            return;
+        if (g == null || m == null) {
+            return true;
+        }
+        if (!awaitGame(m)) {
+            return false;
+        }
+        Game game = m.getGame();
+        if (game.isGameOver()) {
+            return true;
         }
         g.onAction("concede", null, null);
+        return awaitGameOver(game);
+    }
+
+    /** Waits briefly for a started match to expose its game. */
+    private static boolean awaitGame(HostedMatch m) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (m.getGame() == null && System.currentTimeMillis() < deadline) {
+            if (!sleep(50)) {
+                return false;
+            }
+        }
+        return m.getGame() != null;
+    }
+
+    private static boolean awaitGameOver(Game game) {
         long deadline = System.currentTimeMillis() + CONCEDE_WAIT_MS;
         while (!game.isGameOver() && System.currentTimeMillis() < deadline) {
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return;
+            if (!sleep(50)) {
+                return false;
             }
+        }
+        return game.isGameOver();
+    }
+
+    private static boolean sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+            return true;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 

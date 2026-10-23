@@ -72,13 +72,12 @@ public class EngineServer extends WebSocketServer {
     }
 
     @Override
-    public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-        synchronized (this) {
-            if (client != conn) {
-                return; // a rejected connection
-            }
-            client = null;
+    public synchronized void onClose(WebSocket conn, int code, String reason, boolean remote) {
+        if (client != conn) {
+            return; // a rejected connection
         }
+        client = null;
+        // Under the lock, so a fast reconnect's onConnect cannot be undone by this disconnect.
         session.onDisconnect();
     }
 
@@ -109,7 +108,12 @@ public class EngineServer extends WebSocketServer {
         for (String pair : resourceDescriptor.substring(q + 1).split("&")) {
             int eq = pair.indexOf('=');
             if (eq > 0 && pair.substring(0, eq).equals("token")) {
-                String given = URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+                String given;
+                try {
+                    given = URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+                } catch (IllegalArgumentException e) {
+                    return false;
+                }
                 return MessageDigest.isEqual(given.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8));
             }
         }

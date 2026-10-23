@@ -186,6 +186,65 @@ class EngineServerTest {
         assertTrue(!session.gameRunning());
     }
 
+
+    private static final String BOT = "{\"deck\":{\"kind\":\"randomPrecon\"},\"difficulty\":\"EASY\"}";
+
+    private static String startGameJson(String deckId, int bots) {
+        return "{\"type\":\"startGame\",\"deckId\":\"" + deckId + "\",\"bots\":["
+                + String.join(",", java.util.Collections.nCopies(bots, BOT)) + "]}";
+    }
+
+    @Test
+    void disconnectDuringStartWindowEndsTheGame() throws Exception {
+        Client c = connect("?token=" + TOKEN);
+        assertNotNull(c.ofType("ready", 10_000));
+        c.send(startGameJson(store.precons().get(0).id(), 1));
+        c.close();
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (session.gameRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(200);
+        }
+        assertTrue(!session.gameRunning(), "game must end after the client left");
+    }
+
+    @Test
+    void fastReconnectStillGetsReady() throws Exception {
+        Client first = connect("?token=" + TOKEN);
+        assertNotNull(first.ofType("ready", 10_000));
+        first.closeBlocking();
+        Client second = connect("?token=" + TOKEN);
+        assertNotNull(second.ofType("ready", 10_000));
+        second.send("{\"type\":\"listLobby\"}");
+        assertNotNull(second.ofType("lobby", 30_000), "reconnected client still receives engine messages");
+    }
+
+    @Test
+    void secondGameSilencesTheFirst() throws Exception {
+        Client c = connect("?token=" + TOKEN);
+        assertNotNull(c.ofType("ready", 10_000));
+        c.autoAnswer = true;
+        String deck = store.precons().get(0).id();
+        c.send(startGameJson(deck, 1));
+        assertNotNull(c.ofType("state", 60_000), "first game state");
+        c.send(startGameJson(deck, 2));
+        // the second game has 3 players; the first only 2
+        assertNotNull(c.next(m -> m.get("type").getAsString().equals("state")
+                && m.getAsJsonObject("state").getAsJsonArray("players").size() == 3, 90_000), "second game state");
+        long until = System.currentTimeMillis() + 4_000;
+        while (System.currentTimeMillis() < until) {
+            JsonObject m = c.messages.poll(200, TimeUnit.MILLISECONDS);
+            if (m == null) {
+                continue;
+            }
+            String type = m.get("type").getAsString();
+            assertTrue(!type.equals("gameOver"), "stale gameOver leaked: " + m);
+            if (type.equals("state")) {
+                assertEquals(3, m.getAsJsonObject("state").getAsJsonArray("players").size(), "stale state leaked");
+            }
+        }
+        c.send("{\"type\":\"action\",\"action\":\"concede\"}");
+        assertNotNull(c.ofType("gameOver", 60_000));
+    }
     @Test
     void malformedJsonGivesError() throws Exception {
         Client c = connect("?token=" + TOKEN);
