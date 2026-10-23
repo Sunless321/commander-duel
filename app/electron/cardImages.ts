@@ -21,43 +21,102 @@ export function isAllowedImageUrl(url: string): boolean {
   }
 }
 
-/** Serializes fetches at least minGapMs apart (Scryfall etiquette) and shares in-flight work per url. */
+/** Thrown by a fetchFn on HTTP 429 so the queue can back off before the next request. */
+export class RateLimitedError extends Error {
+  constructor(readonly retryAfterMs: number) {
+    super('rate limited');
+  }
+}
+
+const NEGATIVE_TTL_MS = 5 * 60_000;
+
+/**
+ * Serializes fetches at least minGapMs apart (Scryfall etiquette), shares in-flight work per url,
+ * abandons a fetch after timeoutMs so one stall cannot wedge the queue, and remembers failures for
+ * five minutes so remounting cards do not retry-storm.
+ */
 export class FetchQueue {
   private readonly inflight = new Map<string, Promise<Buffer>>();
+  private readonly failedAt = new Map<string, number>();
   private tail: Promise<unknown> = Promise.resolve();
-  private lastStart = 0;
+  private nextStart = 0;
 
   constructor(
     private readonly minGapMs: number,
     private readonly fetchFn: (url: string) => Promise<Buffer>,
+    private readonly timeoutMs = 10_000,
   ) {}
 
   get(url: string): Promise<Buffer> {
     const existing = this.inflight.get(url);
     if (existing) return existing;
+    const failed = this.failedAt.get(url);
+    if (failed !== undefined) {
+      if (Date.now() - failed < NEGATIVE_TTL_MS) return Promise.reject(new Error('recently failed'));
+      this.failedAt.delete(url);
+    }
     const run = this.tail.then(async () => {
-      const wait = this.lastStart + this.minGapMs - Date.now();
+      const wait = this.nextStart - Date.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-      this.lastStart = Date.now();
-      return this.fetchFn(url);
+      this.nextStart = Date.now() + this.minGapMs;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error('fetch timeout')), this.timeoutMs);
+      });
+      try {
+        return await Promise.race([this.fetchFn(url), timeout]);
+      } catch (e) {
+        if (e instanceof RateLimitedError) this.nextStart = Math.max(this.nextStart, Date.now() + e.retryAfterMs);
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
     });
     this.tail = run.catch(() => undefined);
-    const p = run.finally(() => this.inflight.delete(url));
+    const p = run.then(
+      (data) => {
+        this.inflight.delete(url);
+        return data;
+      },
+      (e) => {
+        this.inflight.delete(url);
+        this.failedAt.set(url, Date.now());
+        throw e;
+      },
+    );
     this.inflight.set(url, p);
     return p;
   }
 }
 
-/** Real network fetch: follows Scryfall's redirect to cards.scryfall.io, only accepting those hosts. */
-export async function scryfallFetch(url: string): Promise<Buffer> {
-  const res = await fetch(url, { headers: HEADERS, redirect: 'follow' });
-  if (!res.ok) throw new Error(`scryfall ${res.status}`);
-  if (!ALLOWED_FINAL_HOSTS.has(new URL(res.url).hostname)) throw new Error(`unexpected host ${res.url}`);
-  if (!(res.headers.get('content-type') ?? '').startsWith('image/')) throw new Error('not an image');
-  return Buffer.from(await res.arrayBuffer());
+const MAX_HOPS = 3;
+
+/** Real network fetch: follows redirects by hand (max 3), vetting each hop's host before requesting it. */
+export async function scryfallFetch(url: string, fetchImpl: typeof fetch = fetch): Promise<Buffer> {
+  const signal = AbortSignal.timeout(10_000); // covers headers and the body read
+  let current = url;
+  for (let hop = 0; hop <= MAX_HOPS; hop++) {
+    const u = new URL(current);
+    if (u.protocol !== 'https:' || !ALLOWED_FINAL_HOSTS.has(u.hostname)) throw new Error(`blocked host ${u.hostname}`);
+    const res = await fetchImpl(current, { headers: HEADERS, redirect: 'manual', signal });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      if (!loc) throw new Error('redirect without location');
+      current = new URL(loc, current).toString();
+      continue;
+    }
+    if (res.status === 429) {
+      const secs = Number(res.headers.get('retry-after'));
+      throw new RateLimitedError((Number.isFinite(secs) && secs > 0 ? secs : 2) * 1000);
+    }
+    if (!res.ok) throw new Error(`scryfall ${res.status}`);
+    if (!(res.headers.get('content-type') ?? '').startsWith('image/')) throw new Error('not an image');
+    return Buffer.from(await res.arrayBuffer());
+  }
+  throw new Error('too many redirects');
 }
 
-/** Resolve an image from the disk cache or the network; failures are never cached. */
+/** Resolve an image from the disk cache or the network; failures are never cached on disk. */
 export async function loadImage(url: string, dir: string, queue: FetchQueue): Promise<Buffer> {
   const file = cacheFileFor(url, dir);
   try {
