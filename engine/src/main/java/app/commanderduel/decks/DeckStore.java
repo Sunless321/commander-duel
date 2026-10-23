@@ -54,7 +54,7 @@ public class DeckStore {
             return new ImportResult(false, null, List.of(), List.of(NO_COMMANDER));
         }
 
-        String id = sanitize(name);
+        String id = chooseStem(name);
         Deck deck = new Deck(name);
         for (PaperCard c : commanderCards) {
             deck.getOrCreate(DeckSection.Commander).add(c, 1);
@@ -118,12 +118,26 @@ public class DeckStore {
 
     private static PaperCard resolve(String name) {
         var db = StaticData.instance().getCommonCards();
-        PaperCard card = db.getCard(name);
+        String normalized = name.replace('’', '\'').replace('‘', '\'').replace('ʼ', '\'');
+        PaperCard card = db.getCard(normalized);
         if (card == null) {
-            int i = name.indexOf(" // ");
-            if (i > 0) card = db.getCard(name.substring(0, i));
+            int i = normalized.indexOf(" // ");
+            if (i > 0) card = db.getCard(normalized.substring(0, i));
         }
         return card;
+    }
+
+    /** Reuses the stem when its file holds a deck with exactly this name; otherwise the first free stem. */
+    private String chooseStem(String name) {
+        String base = sanitize(name);
+        String stem = base;
+        for (int n = 2; Files.exists(decksDir.resolve(stem + ".dck")); n++) {
+            Deck existing = DeckSerializer.fromFile(decksDir.resolve(stem + ".dck").toFile());
+            // Forge's Deck constructor itself rewrites '/' to '_' in names
+            if (existing != null && name.replace('/', '_').equals(existing.getName())) break;
+            stem = base + "_" + n;
+        }
+        return stem;
     }
 
     private static void addUnique(List<String> list, String s) {

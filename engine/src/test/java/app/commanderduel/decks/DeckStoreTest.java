@@ -104,6 +104,29 @@ class DeckStoreTest {
     }
 
     @Test
+    void curlyApostropheResolves() {
+        ImportResult r = store.importDeck("Curly", List.of("Atraxa, Praetors’ Voice"), realMain());
+        assertTrue(r.ok(), () -> r.unknownCards().toString());
+    }
+
+    @Test
+    void differentNamesSameSanitizedStemDoNotOverwrite() {
+        ImportResult a = store.importDeck("A/B", List.of("Atraxa, Praetors' Voice"), realMain());
+        ImportResult b = store.importDeck("A:B", List.of("Atraxa, Praetors' Voice"), realMain());
+        assertEquals(2, store.list().size());
+        assertFalse(a.deck().id().equals(b.deck().id()));
+        assertEquals("A_B", store.load(a.deck().id()).getName());
+        assertEquals("A:B", store.load(b.deck().id()).getName());
+    }
+
+    @Test
+    void sameNameReimportOverwrites() {
+        store.importDeck("Deck X", List.of("Atraxa, Praetors' Voice"), realMain());
+        store.importDeck("Deck X", List.of("Atraxa, Praetors' Voice"), realMain());
+        assertEquals(1, store.list().size());
+    }
+
+    @Test
     void illegalDeckStillSavesWithWarning() {
         ImportResult r = store.importDeck("Tiny", List.of("Atraxa, Praetors' Voice"),
                 List.of(new Entry(10, "Forest")));
