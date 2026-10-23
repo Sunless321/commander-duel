@@ -22,7 +22,7 @@ export function decideResponse({ prompt, game, playable, mode, youId }: Response
   if (game.priorityPlayerId !== youId || game.stack.length === 0) return 'none';
   if (game.stack[0].activatorId === youId) return 'none';
   if (mode === 'always') return 'popup';
-  if (mode === 'smart') return playable.size > 0 ? 'popup' : 'autoPass';
+  if (mode === 'smart') return respondCards(game, playable).length > 0 ? 'popup' : 'autoPass';
   return 'autoPass';
 }
 

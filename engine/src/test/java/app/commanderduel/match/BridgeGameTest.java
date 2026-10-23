@@ -82,6 +82,35 @@ class BridgeGameTest {
         assertFalse(client.ofType("state").isEmpty());
     }
 
+    /** Each priority prompt is preceded by the state it belongs to: its "Stack:" text matches that state's stack. */
+    @Test
+    void statePrecedesEveryPriorityPrompt() throws Exception {
+        start(1);
+        assertTrue(client.await(c -> c.latestTurn() >= 4, 120_000), "reached turn 4");
+        int checked = 0;
+        JsonObject lastState = null;
+        List<JsonObject> all;
+        synchronized (client.messages) {
+            all = new ArrayList<>(client.messages);
+        }
+        for (JsonObject m : all) {
+            String type = m.get("type").getAsString();
+            if (type.equals("state")) {
+                lastState = m.getAsJsonObject("state");
+            } else if (type.equals("prompt") && m.get("inputKind").getAsString().equals("priority")) {
+                String text = m.get("message").getAsString();
+                if (!text.contains("Stack:") || lastState == null) {
+                    continue;
+                }
+                boolean emptyText = text.contains("Stack: Empty");
+                boolean emptyState = lastState.getAsJsonArray("stack").isEmpty();
+                assertEquals(emptyText, emptyState, "stack of the last state vs prompt: " + text);
+                checked++;
+            }
+        }
+        assertTrue(checked > 0, "some priority prompts mention the stack");
+    }
+
     @Test
     void threeBotPodStarts() throws Exception {
         start(3);

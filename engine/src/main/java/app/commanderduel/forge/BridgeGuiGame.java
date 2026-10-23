@@ -97,6 +97,8 @@ public class BridgeGuiGame extends NetworkGuiGame {
 
     private volatile PlayerView you;
     private final AtomicBoolean stateScheduled = new AtomicBoolean();
+    /** Serializes snapshot-and-send so states reach the client in the order they were taken. */
+    private final Object stateLock = new Object();
     private final AtomicInteger stateFailures = new AtomicInteger();
     private final AtomicBoolean gameOverSent = new AtomicBoolean();
     private volatile boolean gameEnded;
@@ -343,6 +345,12 @@ public class BridgeGuiGame extends NetworkGuiGame {
     }
 
     private void send(Map<String, Object> msg) {
+        Object type = msg.get("type");
+        if ("prompt".equals(type) || "request".equals(type) || "selection".equals(type)) {
+            // The client decides from the pair (state, prompt): the matching snapshot must arrive first,
+            // not up to a debounce interval later.
+            sendState();
+        }
         String json = Json.GSON.toJson(msg);
         synchronized (out) {
             out.send(json);
@@ -371,6 +379,12 @@ public class BridgeGuiGame extends NetworkGuiGame {
     }
 
     private void sendState() {
+        synchronized (stateLock) {
+            sendStateLocked();
+        }
+    }
+
+    private void sendStateLocked() {
         stateScheduled.set(false); // notifications from here on schedule a fresh snapshot
         GameView game = getGameView();
         PlayerView viewer = you;

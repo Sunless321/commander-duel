@@ -27,6 +27,7 @@
 .popup-status { flex-grow: 1; font-size: 12px; color: var(--muted); }
 .popup-ok-label { font-weight: 400; opacity: 0.8; }
 .popup-modes { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
+.popup-help { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--muted); }
 .pill {
   padding: 6px 12px; border-radius: 999px; font: 600 12px Inter, system-ui, sans-serif; cursor: pointer;
   background: #0d1526; color: var(--muted); border: 1px solid #33405e;

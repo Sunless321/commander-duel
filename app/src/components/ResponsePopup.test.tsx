@@ -60,7 +60,7 @@ const prompt = (over: Partial<PromptMsg> = {}): PromptMsg => ({
 });
 
 const setup = (g: GameState, playable: string[], p: PromptMsg = prompt()) =>
-  act(() => useStore.setState({ game: g, prompt: p, playable: new Set(playable) }));
+  act(() => useStore.setState({ game: g, prompt: p, playable: new Set(playable), promptFresh: true }));
 
 test('shows the spell, its target, text and the playable card', () => {
   setup(game(), ['c1']);
@@ -138,6 +138,52 @@ test('autoPass sends ok once per stack item', () => {
   // a different stack item gets its own pass
   act(() => useStore.setState({ game: game({ stack: [{ id: 's2', text: 'x', sourceCardId: null, activatorId: 'p2', targetIds: [] }] }) }));
   expect(sent).toHaveLength(2);
+});
+
+test('smart mode ignores playable ids the popup would not show', () => {
+  setup(game(), ['c4']); // only an opponent permanent
+  render(<ResponsePopup />);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(sent).toEqual([{ type: 'action', action: 'ok' }]);
+});
+
+test('smart mode explains what it relies on', () => {
+  setup(game(), ['c1']);
+  render(<ResponsePopup />);
+  expect(screen.getByText(/Uses the game's playable-card hints/)).toBeTruthy();
+});
+
+test('a prompt that arrives before its state does nothing until the state arrives', () => {
+  // The stale state still holds the opponent's spell; the new prompt belongs to a later, empty stack.
+  const stale = game();
+  const fresh = game({ stack: [] });
+  act(() => {
+    const h = useStore.getState().handle;
+    h({ type: 'state', state: stale });
+    h({ type: 'playable', cardIds: [] });
+    h({ type: 'prompt', message: 'A', inputKind: 'wait', ok: null, cancel: null });
+  });
+  render(<ResponsePopup />);
+  act(() => useStore.getState().handle({ type: 'prompt', message: 'B', inputKind: 'priority', ok: { label: 'OK', enabled: true }, cancel: null }));
+  expect(sent).toEqual([]); // no state since prompt A: the stale stack must not trigger a pass
+  expect(screen.queryByRole('dialog')).toBeNull();
+  act(() => useStore.getState().handle({ type: 'state', state: fresh }));
+  expect(sent).toEqual([]); // empty stack: nothing to answer
+  act(() => useStore.getState().handle({ type: 'prompt', message: 'C', inputKind: 'priority', ok: { label: 'OK', enabled: true }, cancel: null }));
+  expect(sent).toEqual([]);
+});
+
+test('a prompt that arrives before its state is acted on once the state arrives', () => {
+  act(() => {
+    const h = useStore.getState().handle;
+    h({ type: 'state', state: game({ stack: [] }) });
+    h({ type: 'prompt', message: 'A', inputKind: 'wait', ok: null, cancel: null });
+  });
+  render(<ResponsePopup />);
+  act(() => useStore.getState().handle({ type: 'prompt', message: 'B', inputKind: 'priority', ok: { label: 'OK', enabled: true }, cancel: null }));
+  expect(sent).toEqual([]);
+  act(() => useStore.getState().handle({ type: 'state', state: game() })); // opponent spell, nothing playable
+  expect(sent).toEqual([{ type: 'action', action: 'ok' }]);
 });
 
 test('autoPass never fires when ok is disabled or the prompt is not priority', () => {

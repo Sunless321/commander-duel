@@ -9,7 +9,7 @@ const prompt = (over: Partial<PromptMsg> = {}): PromptMsg => ({
 
 const game = (over: Partial<GameState> = {}): GameState => ({
   turn: 3, phase: 'MAIN1', activePlayerId: 'p2', priorityPlayerId: 'p1', youId: 'p1',
-  players: [], cards: {},
+  players: [], cards: { c1: { id: 'c1' } as never },
   stack: [{ id: 's1', text: 'Opposition Bolt', sourceCardId: 'c9', activatorId: 'p2', targetIds: [] }],
   combat: [], ...over,
 });
@@ -31,6 +31,17 @@ test('opponent spell + nothing playable -> autoPass in smart', () => {
 test('always -> popup even with nothing playable; never -> autoPass even with playables', () => {
   expect(run({ mode: 'always' })).toBe('popup');
   expect(run({ mode: 'never', playable: ['c1'] })).toBe('autoPass');
+});
+
+test('smart: playable ids that are not respond cards do not count', () => {
+  const g = game({
+    players: [
+      { id: 'p1', name: 'You', you: true, life: 40, poison: 0, commanderDamage: {}, manaPool: {}, hand: [], handCount: 0, libraryCount: 0, graveyard: [], exile: [], command: [], battlefield: [] },
+      { id: 'p2', name: 'Bot', you: false, life: 40, poison: 0, commanderDamage: {}, manaPool: {}, hand: [], handCount: 0, libraryCount: 0, graveyard: [], exile: [], command: [], battlefield: ['c4'] },
+    ],
+    cards: { c4: { id: 'c4' } as never },
+  });
+  expect(run({ game: g, playable: ['c4'] })).toBe('autoPass');
 });
 
 test('own spell on stack -> none', () => {
