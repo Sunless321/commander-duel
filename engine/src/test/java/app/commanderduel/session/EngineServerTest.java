@@ -48,7 +48,9 @@ class EngineServerTest {
         }
 
         @Override public void onOpen(ServerHandshake h) { }
-        @Override public void onMessage(String m) { seen.add(m.length() > 300 ? m.substring(0, 300) : m); JsonObject o = Json.GSON.fromJson(m, JsonObject.class); messages.add(o); if (autoAnswer && o.get("type").getAsString().equals("request")) answerMin(o);
+        @Override public void onMessage(String m) { seen.add(m.length() > 200 ? m.substring(0, 200) : m); JsonObject o = Json.GSON.fromJson(m, JsonObject.class); messages.add(o); if (autoAnswer && o.get("type").getAsString().equals("request")) answerMin(o);
+            // winning the coin toss with 3+ players asks which portrait starts: pick ourselves
+            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("Who would you like to start")) send("{\"type\":\"action\",\"action\":\"selectPlayer\",\"id\":\"p0\"}");
             // the coin toss ("play or draw") is a prompt shown before the first state
             if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("coin toss")) send("{\"type\":\"action\",\"action\":\"ok\"}"); }
 
@@ -218,6 +220,21 @@ class EngineServerTest {
         assertNotNull(second.ofType("lobby", 30_000), "reconnected client still receives engine messages");
     }
 
+
+    /** Play again must always get going: every restarted game reaches its first state. */
+    @Test
+    void restartedGamesAlwaysReachTheirFirstState() throws Exception {
+        Client c = connect("?token=" + TOKEN);
+        assertNotNull(c.ofType("ready", 10_000));
+        c.autoAnswer = true;
+        String deck = store.precons().get(0).id();
+        for (int i = 0; i < 10; i++) {
+            c.messages.clear();
+            c.seen.clear();
+            c.send(startGameJson(deck, 1 + i % 3));
+            assertNotNull(c.ofType("state", 40_000), "game " + i + " reached its first state; saw " + c.seen);
+        }
+    }
     @Test
     void secondGameSilencesTheFirst() throws Exception {
         Client c = connect("?token=" + TOKEN);
@@ -229,7 +246,7 @@ class EngineServerTest {
         c.send(startGameJson(deck, 2));
         // the second game has 3 players; the first only 2
         assertNotNull(c.next(m -> m.get("type").getAsString().equals("state")
-                && m.getAsJsonObject("state").getAsJsonArray("players").size() == 3, 90_000), "second game state");
+                && m.getAsJsonObject("state").getAsJsonArray("players").size() == 3, 90_000), "second game state; saw " + c.seen);
         long until = System.currentTimeMillis() + 4_000;
         while (System.currentTimeMillis() < until) {
             JsonObject m = c.messages.poll(200, TimeUnit.MILLISECONDS);

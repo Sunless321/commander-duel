@@ -206,7 +206,7 @@ public class Session {
                     }
                 }, new PendingRequests());
                 self.set(g);
-                gui = g;
+                gui = g; // current BEFORE the match starts, so none of its own first messages is dropped
                 match = MatchStarter.start(you, bots, g);
                 // A disconnect during the start window found no game to concede; do it now.
                 if (clientGone && awaitGame(match)) {
