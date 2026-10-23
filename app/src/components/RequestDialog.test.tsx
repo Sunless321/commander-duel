@@ -107,3 +107,10 @@ test('rejected keeps dialog open with reason', () => {
   expect(screen.getByRole('alert').textContent).toContain('not allowed here');
   expect(screen.queryByText('Pick one')).not.toBeNull();
 });
+
+test('"Other" number never goes below 0 (the engine accepts digits only)', () => {
+  open(req({ kind: 'text', title: 'X', message: 'Enter a number', options: [], min: 0, max: 0, extras: { initial: '', numeric: true, min: -5, max: 3 } }));
+  expect((screen.getByRole('button', { name: 'Less to value' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  expect(sent).toEqual([{ type: 'answer', requestId: 'r1', text: '0' }]);
+});

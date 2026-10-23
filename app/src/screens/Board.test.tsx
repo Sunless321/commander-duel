@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { client } from '../net/engineClient';
 import type { CardDto, GameState, PlayerDto, UiMessage } from '../net/protocol';
@@ -105,4 +106,107 @@ test('opponent hand renders count of card backs', () => {
   render(<Board />);
   const hand = document.querySelector('[data-player-id="p2"] .opp-hand') as HTMLElement;
   expect(hand.querySelectorAll('.card.card-back').length).toBe(5);
+});
+
+function stateWith(edit: (g: GameState) => void): GameState {
+  const g = game();
+  edit(g);
+  return g;
+}
+const inPlayer = (pid: string) => within(document.querySelector(`[data-panel-for="${pid}"]`) as HTMLElement);
+
+test('a playable card in your graveyard is lit in the zone viewer and clicking it sends selectCard', () => {
+  act(() => {
+    useStore.getState().handle({
+      type: 'state',
+      state: stateWith((g) => {
+        g.players[0].graveyard = ['c7'];
+        g.cards.c7 = card('c7', 'p1', 'Graveyard', { name: 'Think Twice' });
+      }),
+    });
+    useStore.getState().handle({ type: 'playable', cardIds: ['c7'] });
+  });
+  render(<Board />);
+  const zone = inPlayer('p1').getByRole('button', { name: /^Graveyard \(1\), has playable/ });
+  expect(zone.classList.contains('lit')).toBe(true);
+  fireEvent.click(zone);
+  const viewer = screen.getByRole('dialog', { name: /Your graveyard/ });
+  const think = within(viewer).getByRole('button', { name: 'Think Twice' });
+  expect(think.classList.contains('glow')).toBe(true);
+  fireEvent.click(think);
+  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c7' }]);
+});
+
+test("a selectable card in an opponent's exile is reachable", () => {
+  act(() => {
+    useStore.getState().handle({
+      type: 'state',
+      state: stateWith((g) => {
+        g.players[1].exile = ['c8'];
+        g.cards.c8 = card('c8', 'p2', 'Exile', { name: 'Exiled Thing' });
+      }),
+    });
+    useStore.getState().handle({ type: 'selection', selectable: ['c8'], chosen: [], min: 1, max: 1 });
+  });
+  render(<Board />);
+  fireEvent.click(inPlayer('p2').getByRole('button', { name: /^Exile \(1\), has playable/ }));
+  const viewer = screen.getByRole('dialog', { name: /Bot 1's exile/ });
+  const thing = within(viewer).getByRole('button', { name: 'Exiled Thing' });
+  expect(thing.classList.contains('selectable')).toBe(true);
+  fireEvent.click(thing);
+  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c8' }]);
+});
+
+test('an offered card in no rendered zone appears in the Playable elsewhere strip', () => {
+  act(() => {
+    useStore.getState().handle({
+      type: 'state',
+      state: stateWith((g) => {
+        g.cards.c9 = card('c9', 'p1', 'Library', { name: 'Top Card' });
+      }),
+    });
+    useStore.getState().handle({ type: 'playable', cardIds: ['c9', 'c1'] });
+  });
+  render(<Board />);
+  const strip = screen.getByRole('region', { name: 'Playable elsewhere' });
+  expect(within(strip).queryByRole('button', { name: 'Card c1' })).toBeNull();
+  fireEvent.click(within(strip).getByRole('button', { name: 'Top Card' }));
+  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c9' }]);
+});
+
+test('concede asks in the page first, then sends concede', () => {
+  act(() => useStore.getState().handle({ type: 'state', state: game() }));
+  render(<Board />);
+  fireEvent.click(screen.getByRole('button', { name: 'Concede' }));
+  expect(screen.queryByText('Concede this game?')).not.toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'No' }));
+  expect(sent).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Concede' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+  expect(sent).toEqual([{ type: 'action', action: 'concede' }]);
+});
+
+test('a hand card is a button that Enter and Space activate', async () => {
+  act(() => useStore.getState().handle({ type: 'state', state: game() }));
+  render(<Board />);
+  const user = userEvent.setup();
+  const c1 = within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Card c1' });
+  expect(c1.tagName).toBe('BUTTON');
+  c1.focus();
+  await user.keyboard('{Enter}');
+  await user.keyboard(' ');
+  expect(sent).toEqual([
+    { type: 'action', action: 'selectCard', id: 'c1' },
+    { type: 'action', action: 'selectCard', id: 'c1' },
+  ]);
+});
+
+test('a chosen-only selection keeps the glow', () => {
+  act(() => {
+    useStore.getState().handle({ type: 'state', state: game() });
+    useStore.getState().handle({ type: 'playable', cardIds: ['c3'] });
+    useStore.getState().handle({ type: 'selection', selectable: [], chosen: ['p2'], min: 0, max: 0 });
+  });
+  render(<Board />);
+  expect(glows('c3')).toBe(true);
 });

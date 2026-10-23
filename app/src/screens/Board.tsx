@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Battlefield, FieldCard, type CardFlags } from '../components/Battlefield';
 import { Card } from '../components/Card';
+import { ConcedeButton } from '../components/ConcedeButton';
+import { ElsewhereStrip, unrenderedOffers } from '../components/ElsewhereStrip';
 import { Hand } from '../components/Hand';
 import { PhaseBar } from '../components/PhaseBar';
-import { PlayerPanel } from '../components/PlayerPanel';
+import { PlayerPanel, type ViewZone } from '../components/PlayerPanel';
 import { PromptBar } from '../components/PromptBar';
 import { RequestDialog } from '../components/RequestDialog';
 import { StackView } from '../components/StackView';
+import { ZoneViewer } from '../components/ZoneViewer';
 import { client } from '../net/engineClient';
 import type { GameState, PlayerDto } from '../net/protocol';
 import { useStore } from '../state/store';
@@ -14,22 +17,26 @@ import '../styles/board.css';
 
 const MANA = ['W', 'U', 'B', 'R', 'G', 'C'] as const;
 
+interface OpenZone { playerId: string; zone: ViewZone }
+
 /** The main game screen. It renders what the engine sends and relays clicks; the engine decides legality. */
 export function Board() {
   const game = useStore((s) => s.game);
   const selection = useStore((s) => s.selection);
   const playable = useStore((s) => s.playable);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [openZone, setOpenZone] = useState<OpenZone | null>(null);
 
   const flags = useMemo<CardFlags | null>(() => {
     if (!game) return null;
-    const you = game.players.find((p) => p.you);
-    const mine = new Set([...(you?.hand ?? []), ...(you?.battlefield ?? []), ...(you?.command ?? [])]);
+    // Opponents' permanents never glow for you; anything else the engine calls playable may
+    // (your hand, battlefield, command zone, any graveyard or exile: flashback, foretell, "you may cast").
+    const theirs = new Set(game.players.filter((p) => !p.you).flatMap((p) => [...p.battlefield, ...p.command]));
     const selectable = new Set(selection?.selectable ?? []);
     const chosen = new Set(selection?.chosen ?? []);
     const selecting = selectable.size > 0;
     return {
-      glow: (id) => !selecting && playable.has(id) && mine.has(id),
+      glow: (id) => !selecting && playable.has(id) && !theirs.has(id),
       selectable: (id) => selectable.has(id),
       chosen: (id) => chosen.has(id),
       onCard: (id) => {
@@ -39,19 +46,30 @@ export function Board() {
     };
   }, [game, selection, playable]);
 
+  const elsewhere = useMemo(
+    () => (game ? unrenderedOffers(game, [...playable, ...(selection?.selectable ?? [])]) : []),
+    [game, playable, selection],
+  );
+
   const ok = () => client.send({ type: 'action', action: 'ok' });
   const cancel = () => client.send({ type: 'action', action: 'cancel' });
+  const concede = () => client.send({ type: 'action', action: 'concede' });
 
   return (
     <div className="board">
       <div className="board-main">
-        {game && flags ? <Table game={game} flags={flags} /> : <div className="shuffling">Shuffling up…</div>}
+        {game && flags ? (
+          <Table game={game} flags={flags} onZone={(playerId, zone) => setOpenZone({ playerId, zone })} />
+        ) : (
+          <div className="shuffling">Shuffling up…</div>
+        )}
       </div>
       <aside className="board-side">
         {game && hovered && game.cards[hovered] && !game.cards[hovered].hidden && (
           <div className="preview"><Card card={game.cards[hovered]} size="hand" glow={false} selectable={false} chosen={false} /></div>
         )}
         <div className="grow" />
+        {game && flags && <ElsewhereStrip ids={elsewhere} game={game} flags={flags} />}
         {game && flags && (
           <StackView
             game={game}
@@ -63,20 +81,25 @@ export function Board() {
           />
         )}
         <PromptBar onOk={ok} onCancel={cancel} />
+        {game && <ConcedeButton onConcede={concede} />}
       </aside>
+      {game && flags && openZone && (
+        <ZoneViewer game={game} playerId={openZone.playerId} zone={openZone.zone} flags={flags} onClose={() => setOpenZone(null)} />
+      )}
       <RequestDialog />
     </div>
   );
 }
 
-function Table({ game, flags }: { game: GameState; flags: CardFlags }) {
+function Table(props: { game: GameState; flags: CardFlags; onZone: (playerId: string, zone: ViewZone) => void }) {
+  const { game, flags, onZone } = props;
   const you = game.players.find((p) => p.you);
   const opponents = game.players.filter((p) => !p.you);
   const onPlayer = (id: string) => {
     if (game.players.some((p) => p.id === id)) client.send({ type: 'action', action: 'selectPlayer', id });
   };
   const panel = (p: PlayerDto) => (
-    <PlayerPanel player={p} game={game} selectable={flags.selectable(p.id)} chosen={flags.chosen(p.id)} onClick={() => onPlayer(p.id)} />
+    <PlayerPanel player={p} game={game} flags={flags} onClick={() => onPlayer(p.id)} onZone={(z) => onZone(p.id, z)} />
   );
 
   return (

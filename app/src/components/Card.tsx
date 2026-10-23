@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { CardDto } from '../net/protocol';
 import '../styles/card.css';
 
@@ -29,28 +29,37 @@ export function Card({ card, size, glow, selectable, chosen, onClick }: CardProp
     .filter(Boolean)
     .join(' ');
 
-  if (showBack || !card) return <div className={classes} onClick={onClick} />;
+  // A clickable card is a real button, so it can be played from the keyboard too.
+  const root = (children: ReactNode, name: string | null) =>
+    onClick ? (
+      <button type="button" className={classes} onClick={onClick} aria-label={name ?? 'Face-down card'} title={name ?? undefined}>
+        {children}
+      </button>
+    ) : (
+      <div className={classes} title={name ?? undefined}>{children}</div>
+    );
+
+  if (showBack || !card) return root(null, null);
 
   const pt = card.power != null && card.toughness != null ? `${card.power}/${card.toughness}` : null;
-  return (
-    <div className={classes} onClick={onClick} title={card.name ?? undefined}>
-      {url && !broken ? (
-        <img
-          src={'card://img?u=' + encodeURIComponent(url)}
-          alt={card.name ?? ''}
-          draggable={false}
-          onError={() => setBroken(true)}
-        />
-      ) : (
-        <div className="card-text">
-          <div className="card-text-head">
-            <span className="card-name">{card.name}</span>
-            {card.manaCost && <span className="card-cost">{card.manaCost}</span>}
-          </div>
-          <div className="card-type">{card.typeLine}</div>
-          {pt && <div className="card-pt">{pt}</div>}
-        </div>
-      )}
-    </div>
+  return root(
+    url && !broken ? (
+      <img
+        src={'card://img?u=' + encodeURIComponent(url)}
+        alt={card.name ?? ''}
+        draggable={false}
+        onError={() => setBroken(true)}
+      />
+    ) : (
+      <span className="card-text">
+        <span className="card-text-head">
+          <span className="card-name">{card.name}</span>
+          {card.manaCost && <span className="card-cost">{card.manaCost}</span>}
+        </span>
+        <span className="card-type">{card.typeLine}</span>
+        {pt && <span className="card-pt">{pt}</span>}
+      </span>
+    ),
+    card.name,
   );
 }

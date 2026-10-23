@@ -50,14 +50,33 @@
 /* ---- player panels */
 .player-panel {
   width: 200px; flex: none; box-sizing: border-box; background: var(--panel); border: 1px solid var(--border);
-  border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; cursor: pointer;
+  border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
   transition: box-shadow 200ms ease;
 }
 .opponents.n3 .player-panel { width: 160px; }
 .player-panel.active { border-color: var(--gold); }
 .player-panel.selectable { box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(212, 166, 74, 0.45); }
 .player-panel.chosen { box-shadow: 0 0 0 3px #fff; }
-.player-panel:focus-visible { outline: 2px solid var(--glow); }
+.panel-hit {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 0; margin: 0; border: none; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 8px;
+}
+.panel-hit:focus-visible, .zone-btn:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+.zone-row { display: flex; gap: 6px; }
+.zone-btn {
+  position: relative; flex: 1; min-height: 26px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--border);
+  background: #0f182b; color: var(--muted); font: 600 11px Inter, system-ui, sans-serif; cursor: pointer;
+}
+.zone-btn:disabled { opacity: 0.45; cursor: default; }
+.zone-btn.lit { border-color: var(--glow); color: #cfe8ff; box-shadow: 0 0 8px rgba(79, 179, 255, 0.5); }
+.zone-dot { position: absolute; top: -4px; right: -4px; width: 9px; height: 9px; border-radius: 50%; background: var(--glow); }
+.zone-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.zone-grid .slot { width: 74px; height: 104px; }
+.elsewhere { background: var(--panel); border: 1px solid var(--glow); border-radius: 12px; padding: 10px; }
+.elsewhere .slot { width: 74px; height: 104px; }
+.concede { min-height: 32px; font-size: 12px; color: var(--muted); }
+.concede-confirm { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.concede-confirm .btn { min-height: 32px; }
 .panel-head { display: flex; align-items: center; gap: 10px; }
 .avatar {
   width: 32px; height: 32px; flex: none; border-radius: 50%; background: #2a2440; border: 2px solid #b48be0;
@@ -233,3 +252,5 @@
 .game-over h1.won { color: #d4a64a; }
 .game-over h1.lost { color: #c9d4e8; }
 .game-over-actions { display: flex; gap: 12px; }
+.game-over-error { margin: 0; color: #e5736a; }
+.panel-hit, .panel-head { min-width: 0; overflow: hidden; }

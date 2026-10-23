@@ -303,9 +303,9 @@ function TextBody({ request, answer }: BodyProps) {
       </Actions>
     );
   }
-  // getInteger's "Other..." number arrives as numeric text with bounds.
+  // getInteger's "Other..." number arrives as numeric text with bounds. The engine accepts digits only, so never below 0.
   if (numeric && typeof request.extras.min === 'number' && typeof request.extras.max === 'number') {
-    const lo = request.extras.min;
+    const lo = Math.max(request.extras.min, 0);
     const hi = request.extras.max;
     const start = Number.parseInt(initial, 10);
     return <NumberPicker lo={lo} hi={hi} initial={Number.isFinite(start) ? start : Math.max(lo, 0)} submit={(v) => answer({ text: String(v) })} />;
