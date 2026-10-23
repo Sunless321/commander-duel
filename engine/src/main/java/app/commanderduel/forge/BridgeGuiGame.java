@@ -100,6 +100,10 @@ public class BridgeGuiGame extends NetworkGuiGame {
     private final Object stateLock = new Object();
     /** Seq of the last state actually sent; guarded by stateLock. */
     private long lastStateSeq;
+    /** A seq already promised to the client by a prompt whose state could not be sent; the next state carries it. */
+    private long reservedSeq;
+    /** Test hook: makes the next pre-prompt state flush fail once. */
+    public volatile boolean failNextFlush;
     private final AtomicInteger stateFailures = new AtomicInteger();
     private final AtomicBoolean gameOverSent = new AtomicBoolean();
     private volatile boolean gameEnded;
@@ -352,13 +356,25 @@ public class BridgeGuiGame extends NetworkGuiGame {
             // not up to a debounce interval later. The message carries the seq of the state before it, so the
             // client can tell a matching pair from a stale one. Held under stateLock so no other state interleaves.
             synchronized (stateLock) {
+                long before = lastStateSeq;
                 try {
+                    if (failNextFlush) {
+                        failNextFlush = false;
+                        throw new IllegalStateException("injected flush failure");
+                    }
                     sendStateLocked();
                 } catch (RuntimeException e) {
                     logFlushFailure(e);
                     scheduleState(); // never let a failed snapshot swallow the prompt itself
                 }
-                msg.put("stateSeq", lastStateSeq);
+                if (lastStateSeq == before) {
+                    // No state went out: stamp the seq the retried state will carry, so the client waits for it
+                    // instead of deciding on the older state it already holds.
+                    reservedSeq = Math.max(reservedSeq, lastStateSeq + 1);
+                    msg.put("stateSeq", reservedSeq);
+                } else {
+                    msg.put("stateSeq", lastStateSeq);
+                }
                 send0(msg);
             }
             return;
@@ -432,7 +448,8 @@ public class BridgeGuiGame extends NetworkGuiGame {
             return;
         }
         stateFailures.set(0);
-        m.put("seq", ++lastStateSeq);
+        lastStateSeq = Math.max(lastStateSeq + 1, reservedSeq);
+        m.put("seq", lastStateSeq);
         send0(m);
     }
 

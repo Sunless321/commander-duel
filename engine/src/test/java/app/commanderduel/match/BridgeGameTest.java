@@ -97,17 +97,23 @@ class BridgeGameTest {
         }
         JsonObject prev = null; // nearest preceding state/prompt/request/selection
         int checked = 0;
+        long lastSeq = 0;
         for (JsonObject m : all) {
             String type = m.get("type").getAsString();
             boolean decision = type.equals("prompt") || type.equals("request") || type.equals("selection");
             if (decision) {
                 assertTrue(m.has("stateSeq"), type + " carries stateSeq");
-                if (m.get("stateSeq").getAsLong() > 0) {
-                    assertTrue(prev != null && prev.get("type").getAsString().equals("state"),
-                            type + " must directly follow a state, but follows " + (prev == null ? "nothing" : prev));
-                    assertEquals(prev.get("seq").getAsLong(), m.get("stateSeq").getAsLong(), type + " stateSeq");
+                long stamp = m.get("stateSeq").getAsLong();
+                if (prev != null && prev.get("type").getAsString().equals("state")) {
+                    assertEquals(prev.get("seq").getAsLong(), stamp, type + " stateSeq");
                     checked++;
+                } else {
+                    // no state could be sent just before it: the stamp must be a not-yet-sent seq
+                    assertTrue(stamp > lastSeq, type + " follows no state, so its stateSeq " + stamp + " must be above " + lastSeq);
                 }
+            }
+            if (type.equals("state")) {
+                lastSeq = m.get("seq").getAsLong();
             }
             if (decision || type.equals("state")) {
                 prev = m;
@@ -122,6 +128,37 @@ class BridgeGameTest {
                 last = seq;
             }
         }
+    }
+
+    /** A failed pre-prompt flush stamps the seq the retried state will carry, never the older applied seq. */
+    @Test
+    void failedFlushReservesTheNextSeqAndTheRetriedStateCarriesIt() throws Exception {
+        start(1);
+        gui.failNextFlush = true;
+        assertTrue(client.await(c -> c.latestTurn() >= 2, 120_000), "game progressed");
+        List<JsonObject> all;
+        synchronized (client.messages) {
+            all = new ArrayList<>(client.messages);
+        }
+        long maxSeq = 0;
+        long reserved = -1;
+        boolean carried = false;
+        for (JsonObject m : all) {
+            String type = m.get("type").getAsString();
+            if (type.equals("state")) {
+                long seq = m.get("seq").getAsLong();
+                if (reserved > 0 && !carried) {
+                    assertEquals(reserved, seq, "the retried state carries the reserved seq");
+                    carried = true;
+                }
+                maxSeq = seq;
+            } else if (m.has("stateSeq") && m.get("stateSeq").getAsLong() > maxSeq && reserved < 0) {
+                reserved = m.get("stateSeq").getAsLong();
+                assertEquals(maxSeq + 1, reserved);
+            }
+        }
+        assertTrue(reserved > 0, "a prompt was stamped with a seq above every state sent before it");
+        assertTrue(carried, "the reserved seq was sent");
     }
 
     /** With 3+ players the toss winner picks the starting portrait before the mulligan; the board needs a state for that. */

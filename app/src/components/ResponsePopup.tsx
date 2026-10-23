@@ -28,7 +28,7 @@ export function ResponsePopup() {
   const passedKey = useRef<string | null>(null);
 
   // An open request always wins, and then we neither show nor answer anything.
-  const decision = requestOpen || !game || !prompt || prompt.stateSeq !== stateSeq
+  const decision = requestOpen || !game || !prompt || prompt.stateSeq > stateSeq
     ? 'none'
     : decideResponse({ prompt, game, playable, mode, youId: game.youId });
 

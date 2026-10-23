@@ -56,7 +56,7 @@ export interface StoreState {
   lastStart: StartGameMsg | null;
   respondMode: RespondMode;
   respondTipDismissed: boolean;
-  /** Seq of the applied state; a prompt is only acted on when its stateSeq equals this. */
+  /** Seq of the applied state; a prompt is only acted on when its stateSeq is not above this (an older state is the bug; a newer one is fine). */
   stateSeq: number;
   handle: (m: ClientEvent) => void;
   setScreen: (s: Screen) => void;

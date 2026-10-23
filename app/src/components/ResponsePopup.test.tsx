@@ -206,3 +206,20 @@ test('never mode auto-passes even when you could respond', () => {
   render(<ResponsePopup />);
   expect(sent).toEqual([{ type: 'action', action: 'ok' }]);
 });
+
+test('a newer state while the same prompt stands keeps the popup (older waits, equal decides, newer decides)', () => {
+  const h = useStore.getState().handle;
+  act(() => {
+    h({ type: 'state', seq: 1, state: game({ stack: [] }) });
+    h({ type: 'playable', cardIds: ['c1'] });
+  });
+  render(<ResponsePopup />);
+  act(() => h(pr(2, 'B')));
+  expect(screen.queryByRole('dialog')).toBeNull(); // older state: wait
+  act(() => h({ type: 'state', seq: 2, state: game() }));
+  expect(screen.getByRole('dialog')).toBeTruthy(); // equal: decide
+  const g = game();
+  g.players[0].manaPool = { G: 1 };
+  act(() => h({ type: 'state', seq: 3, state: g })); // e.g. a mana-pool update after the prompt
+  expect(screen.getByRole('dialog')).toBeTruthy(); // newer: still decides
+});

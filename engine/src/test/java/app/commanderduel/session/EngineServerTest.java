@@ -52,7 +52,9 @@ class EngineServerTest {
             // winning the coin toss with 3+ players asks which portrait starts: pick ourselves
             if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("Who would you like to start")) send("{\"type\":\"action\",\"action\":\"selectPlayer\",\"id\":\"p0\"}");
             // the coin toss ("play or draw") is a prompt shown before the first state
-            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("coin toss")) send("{\"type\":\"action\",\"action\":\"ok\"}"); }
+            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("coin toss")) send("{\"type\":\"action\",\"action\":\"ok\"}");
+            // keep the opening hand
+            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("inputKind").getAsString().equals("mulligan") && o.getAsJsonObject("ok").get("enabled").getAsBoolean()) send("{\"type\":\"action\",\"action\":\"ok\"}"); }
 
         volatile boolean autoAnswer;
 
@@ -232,7 +234,7 @@ class EngineServerTest {
             c.messages.clear();
             c.seen.clear();
             c.send(startGameJson(deck, 1 + i % 3));
-            assertNotNull(c.ofType("state", 40_000), "game " + i + " reached its first state; saw " + c.seen);
+            assertNotNull(c.next(m -> m.get("type").getAsString().equals("prompt") && m.get("inputKind").getAsString().equals("priority"), 40_000), "game " + i + " reached its first priority prompt; saw " + c.seen);
         }
     }
     @Test
@@ -242,11 +244,12 @@ class EngineServerTest {
         c.autoAnswer = true;
         String deck = store.precons().get(0).id();
         c.send(startGameJson(deck, 1));
-        assertNotNull(c.ofType("state", 60_000), "first game state");
+        assertNotNull(c.next(m -> m.get("type").getAsString().equals("prompt") && m.get("inputKind").getAsString().equals("priority"), 60_000), "first game priority prompt");
         c.send(startGameJson(deck, 2));
         // the second game has 3 players; the first only 2
         assertNotNull(c.next(m -> m.get("type").getAsString().equals("state")
                 && m.getAsJsonObject("state").getAsJsonArray("players").size() == 3, 90_000), "second game state; saw " + c.seen);
+        assertNotNull(c.next(m -> m.get("type").getAsString().equals("prompt") && m.get("inputKind").getAsString().equals("priority"), 90_000), "second game priority prompt; saw " + c.seen);
         long until = System.currentTimeMillis() + 4_000;
         while (System.currentTimeMillis() < until) {
             JsonObject m = c.messages.poll(200, TimeUnit.MILLISECONDS);
