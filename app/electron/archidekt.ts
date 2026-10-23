@@ -59,42 +59,76 @@ export async function fetchArchidekt(id: string): Promise<ArchidektResult> {
   try {
     return parseArchidekt(await res.json());
   } catch {
-    return { ok: false, error: NETWORK_MSG };
+    return { ok: false, error: 'Unexpected response from Archidekt.' };
   }
 }
 
-/** Parses "1 Sol Ring" style lists. A "Commander" header or a "*CMDR*" suffix marks commanders. */
+type Section = 'main' | 'commander' | 'skip';
+const HEADER = /^(?:\/\/\s*)?(commanders?|deck|main(?:board)?|sideboard|maybeboard|considering|companion)\s*:?$/i;
+const TAGS = [/\s*\[([^\]]*)\]\s*$/, /\s*\^[^^]*\^\s*$/, /\s*\*[A-Za-z]+\*\s*$/];
+
+/** Strips Archidekt/Moxfield export suffixes. Returns the bare name and whether a commander tag was present. */
+function cleanName(raw: string): { name: string; cmdr: boolean } {
+  let line = raw.trim();
+  let cmdr = false;
+  const stripTags = () => {
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const re of TAGS) {
+        const m = re.exec(line);
+        if (!m) continue;
+        if (/^commander/i.test(m[1] ?? '') || /^\s*\*cmdr\*\s*$/i.test(m[0])) cmdr = true;
+        line = line.slice(0, m.index);
+        changed = true;
+      }
+    }
+  };
+  stripTags();
+  line = line.replace(/\s*\([A-Za-z0-9]+\)\s*\S*$/, '');
+  stripTags();
+  return { name: line.trim(), cmdr };
+}
+
+/**
+ * Parses "1 Sol Ring" style lists. A "Commander" header (ended by a blank line) or a
+ * "*CMDR*" / "[Commander{...}]" tag marks commanders. Sideboard/Maybeboard/Considering/Companion
+ * sections and "SB:" lines are skipped. Lines without a count count as 1; unusable lines are
+ * reported in skippedLines.
+ */
 export function parseTextList(text: string): ArchidektResult {
   const commanders: string[] = [];
   const counts = new Map<string, number>();
-  let inCommander = false;
+  const skippedLines: string[] = [];
+  let section: Section = 'main';
   for (const raw of text.split(/\r?\n/)) {
-    let line = raw.trim();
-    if (!line || line.startsWith('//') || line.startsWith('#')) continue;
-    const header = /^(commanders?|deck|main(?:board)?|sideboard|maybeboard|companion)\s*:?$/i.exec(line);
-    if (header) {
-      inCommander = /^commander/i.test(header[1]);
+    const line = raw.trim();
+    if (!line) {
+      if (section === 'commander') section = 'main';
       continue;
     }
-    const m = /^(\d+)\s*x?\s+(.+)$/i.exec(line);
-    if (!m) continue;
-    line = m[2];
-    let isCmdr = inCommander;
-    if (/\*cmdr\*/i.test(line)) {
-      isCmdr = true;
-      line = line.replace(/\*cmdr\*/gi, '');
+    const header = HEADER.exec(line);
+    if (header) {
+      const h = header[1].toLowerCase();
+      section = h.startsWith('commander') ? 'commander' : h === 'deck' || h.startsWith('main') ? 'main' : 'skip';
+      continue;
     }
-    // Drop "(SET) 123" printing info and trailing foil markers.
-    const name = line.replace(/\s*\([A-Za-z0-9]+\)\s*\S*\s*(\*[A-Za-z]\*)?\s*$/, '').trim();
-    if (!name) continue;
-    if (isCmdr) {
+    if (line.startsWith('//') || line.startsWith('#')) continue;
+    if (section === 'skip' || /^sb:/i.test(line)) continue;
+    const m = /^(\d+)\s*x?\s+(.+)$/i.exec(line);
+    const count = m ? Number(m[1]) : 1;
+    const { name, cmdr } = cleanName(m ? m[2] : line);
+    if (!name || /^\d+$/.test(name)) {
+      skippedLines.push(line);
+      continue;
+    }
+    if (cmdr || section === 'commander') {
       if (!commanders.includes(name)) commanders.push(name);
     } else {
-      counts.set(name, (counts.get(name) ?? 0) + Number(m[1]));
+      counts.set(name, (counts.get(name) ?? 0) + count);
     }
   }
   if (commanders.length === 0 && counts.size === 0) {
     return { ok: false, error: 'No cards found. Paste an Archidekt link or lines like "1 Sol Ring".' };
   }
-  return { ok: true, name: 'Pasted deck', commanders, main: [...counts].map(([name, count]) => ({ count, name })) };
+  return { ok: true, name: 'Pasted deck', commanders, main: [...counts].map(([name, count]) => ({ count, name })), skippedLines };
 }

@@ -152,7 +152,7 @@ export type GameAction = 'selectCard' | 'selectPlayer' | 'selectStackItem' | 'ok
 
 export type UiMessage =
   | { type: 'listLobby' }
-  | { type: 'importDeck'; name: string; commanders: string[]; main: { count: number; name: string }[] }
+  | { type: 'importDeck'; name: string; commanders: string[]; main: { count: number; name: string }[]; skippedLines?: string[] }
   | { type: 'startGame'; deckId: string; bots: { deck: BotDeck; difficulty: Difficulty }[] }
   | { type: 'answer'; requestId: string; optionIds: string[] }
   | { type: 'answer'; requestId: string; value: number }
@@ -163,7 +163,7 @@ export type UiMessage =
 // ---------------------------------------------------------------- Electron bridge
 
 export type ArchidektResult =
-  | { ok: true; name: string; commanders: string[]; main: { count: number; name: string }[] }
+  | { ok: true; name: string; commanders: string[]; main: { count: number; name: string }[]; skippedLines?: string[] }
   | { ok: false; error: string };
 
 export interface EngineEndpoint { port: number; token: string }

@@ -67,6 +67,7 @@ test('parseTextList handles *CMDR*', () => {
     name: 'Pasted deck',
     commanders: ["Atraxa, Praetors' Voice"],
     main: [{ count: 1, name: 'Sol Ring' }, { count: 4, name: 'Island' }],
+    skippedLines: [],
   });
 });
 
@@ -78,5 +79,41 @@ test('parseTextList handles Commander header', () => {
 });
 
 test('parseTextList rejects empty', () => {
-  expect(parseTextList('hello world').ok).toBe(false);
+  expect(parseTextList('  \n// nothing\nSideboard\n1 A').ok).toBe(false);
+});
+
+const ok = (text: string) => {
+  const r = parseTextList(text);
+  if (!r.ok) throw new Error(r.error);
+  return r;
+};
+
+test('parseTextList skips Sideboard, Maybeboard, Considering, Companion sections', () => {
+  const r = ok('Deck\n1 Sol Ring\n\nSideboard\n1 A\n\n// Maybeboard\n1 B\nConsidering:\n1 C\nCompanion\n1 D\nMainboard\n1 Island');
+  expect(r.main.map((c) => c.name)).toEqual(['Sol Ring', 'Island']);
+});
+
+test('parseTextList strips export suffixes and reads commander tags', () => {
+  const r = ok(
+    '1x Sol Ring (cmm) 123 [Ramp]\n1 Arcane Signet (c21) 5 *F* ^Tag,#fff^ [Ramp,Artifact]\n1 Foil (m21) 1 *E*\n1 Krenko, Mob Boss (m20) 1 [Commander{top}]',
+  );
+  expect(r.main.map((c) => c.name)).toEqual(['Sol Ring', 'Arcane Signet', 'Foil']);
+  expect(r.commanders).toEqual(['Krenko, Mob Boss']);
+});
+
+test('parseTextList: no count means 1, SB: skipped, junk reported', () => {
+  const r = ok('Sol Ring\nSB: 1 Foo\n42\n2 Island');
+  expect(r.main).toEqual([{ count: 1, name: 'Sol Ring' }, { count: 2, name: 'Island' }]);
+  expect(r.skippedLines).toEqual(['42']);
+});
+
+test('parseTextList: blank line ends Commander section', () => {
+  const r = ok('Commander\n1 X\n\n1 Sol Ring');
+  expect(r.commanders).toEqual(['X']);
+  expect(r.main).toEqual([{ count: 1, name: 'Sol Ring' }]);
+});
+
+test('non-JSON 200 gives readable error', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>', { status: 200 })));
+  expect(await fetchArchidekt('1')).toEqual({ ok: false, error: 'Unexpected response from Archidekt.' });
 });

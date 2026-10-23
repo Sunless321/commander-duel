@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { client } from '../net/engineClient';
 import { useStore } from '../state/store';
 
@@ -12,20 +12,53 @@ export function Decks() {
   const lastImport = useStore((s) => s.lastImport);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [skipped, setSkipped] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTimer = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+
+  // The engine's reply ends the "Importing…" state.
+  useEffect(() => {
+    if (lastImport) {
+      clearTimer();
+      setBusy(false);
+    }
+  }, [lastImport]);
+
+  // Leaving the Decks screen clears stale import feedback.
+  useEffect(
+    () => () => {
+      clearTimer();
+      useStore.setState({ lastImport: null });
+    },
+    [],
+  );
 
   const submit = async () => {
     if (!text.trim() || busy) return;
     setBusy(true);
     setError(null);
+    setSkipped([]);
     useStore.setState({ lastImport: null });
     try {
       const r = await window.duel.importArchidekt(text);
-      if (!r.ok) setError(r.error);
-      else client.send({ type: 'importDeck', name: r.name, commanders: r.commanders, main: r.main });
+      if (!r.ok) {
+        setError(r.error);
+        setBusy(false);
+        return;
+      }
+      setSkipped(r.skippedLines ?? []);
+      client.send({ type: 'importDeck', name: r.name, commanders: r.commanders, main: r.main });
+      timer.current = setTimeout(() => {
+        setBusy(false);
+        setError("The engine didn't respond — try again");
+      }, 30_000);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
       setBusy(false);
     }
   };
@@ -65,6 +98,12 @@ export function Decks() {
             <ul style={{ marginTop: 0 }}>
               {lastImport.unknownCards.map((n) => <li key={n}>{n}</li>)}
             </ul>
+          </div>
+        )}
+        {skipped.length > 0 && (
+          <div style={{ color: '#d4a64a' }}>
+            <p style={{ marginBottom: 4 }}>Warning: these lines were skipped:</p>
+            <ul style={{ marginTop: 0 }}>{skipped.map((l, i) => <li key={i}>{l}</li>)}</ul>
           </div>
         )}
         {lastImport && lastImport.problems.length > 0 && (
