@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { buildStartGame, defaultBot, type BotChoice } from '../logic/setupPayload';
+import { buildStartGame, defaultBot, defaultDeckId, filterPrecons, type BotChoice } from '../logic/setupPayload';
 import { client } from '../net/engineClient';
 import type { BotDeck, Difficulty, PreconSummary } from '../net/protocol';
 import { useStore } from '../state/store';
@@ -11,9 +11,11 @@ const field = {
 } as const;
 const primary = {
   minHeight: 44, background: '#d4a64a', color: '#0b1322', border: 'none', borderRadius: 6,
-  padding: '0 18px', cursor: 'pointer', fontWeight: 600, font: 'inherit',
+  padding: '0 18px', cursor: 'pointer', font: 'inherit', fontWeight: 600,
 } as const;
 const secondary = { ...primary, background: 'transparent', color: '#e8ecf4', border: '1px solid #24324f' } as const;
+
+const START_TIMEOUT_MS = 60_000;
 
 const DIFFICULTIES: { value: Difficulty; label: string }[] = [
   { value: 'EASY', label: 'Easy' },
@@ -30,13 +32,6 @@ function decode(v: string): BotDeck {
   const kind = v.slice(0, i);
   const id = v.slice(i + 1);
   return kind === 'precon' ? { kind: 'precon', id } : { kind: 'imported', id };
-}
-
-/** Case-insensitive match on precon name or commander name. */
-export function filterPrecons(precons: PreconSummary[], query: string): PreconSummary[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return precons;
-  return precons.filter((p) => p.name.toLowerCase().includes(q) || p.commander.toLowerCase().includes(q));
 }
 
 function BotRow(props: {
@@ -118,7 +113,7 @@ export function Setup() {
   const requestCount = useStore((s) => s.requests.length);
   const prompt = useStore((s) => s.prompt);
 
-  const [deckId, setDeckId] = useState(selected?.id ?? decks[0]?.id ?? '');
+  const [deckId, setDeckId] = useState(() => defaultDeckId({ precons, decks }, selected?.id));
   const [bots, setBots] = useState<BotChoice[]>([defaultBot()]);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +122,16 @@ export function Setup() {
   useEffect(() => {
     if (starting && (requestCount > 0 || prompt)) useStore.getState().setScreen('board');
   }, [starting, requestCount, prompt]);
+
+  // Starting must not hang forever.
+  useEffect(() => {
+    if (!starting) return;
+    const t = setTimeout(() => {
+      setError("The engine didn't start the game — try again");
+      setStarting(false);
+    }, START_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [starting]);
 
   // An engine error while starting keeps us here.
   useEffect(() => {

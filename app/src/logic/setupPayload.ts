@@ -1,4 +1,4 @@
-import type { BotDeck, Difficulty, UiMessage } from '../net/protocol';
+import type { BotDeck, Difficulty, PreconSummary, UiMessage } from '../net/protocol';
 
 export interface BotChoice { deck: BotDeck; difficulty: Difficulty }
 
@@ -12,4 +12,20 @@ export function buildStartGame(deckId: string, bots: BotChoice[]): UiMessage {
     deckId,
     bots: bots.map((b) => ({ deck: { ...b.deck }, difficulty: b.difficulty })),
   };
+}
+
+/** Case-insensitive match on precon name or commander name. */
+export function filterPrecons(precons: PreconSummary[], query: string): PreconSummary[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return precons;
+  return precons.filter((p) => p.name.toLowerCase().includes(q) || p.commander.toLowerCase().includes(q));
+}
+
+/** The selected deck if it is still in the lobby, else the first imported deck, else the first precon, else ''. */
+export function defaultDeckId(
+  lobby: { precons: { id: string }[]; decks: { id: string }[] },
+  selectedId: string | null | undefined,
+): string {
+  if (selectedId && lobby.decks.some((d) => d.id === selectedId)) return selectedId;
+  return lobby.decks[0]?.id ?? lobby.precons[0]?.id ?? '';
 }
