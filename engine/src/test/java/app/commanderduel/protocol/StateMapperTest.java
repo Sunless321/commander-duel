@@ -134,6 +134,11 @@ class StateMapperTest {
         assertTrue(d.hidden());
         assertNull(d.name());
         assertNull(d.imageUrl());
+        assertNull(d.text());
+        assertNull(d.typeLine());
+        assertNull(d.manaCost());
+        assertNull(d.power());
+        assertNull(d.toughness());
     }
 
     @Test
@@ -156,5 +161,39 @@ class StateMapperTest {
     @Test
     void serializesToJson() {
         assertTrue(Json.GSON.toJson(map()).contains("\"phase\""));
+    }
+
+    private void putOnStack(Card source, Card target) {
+        var sa = source.getFirstSpellAbility();
+        sa.setActivatingPlayer(opp);
+        if (target != null) {
+            sa.setTargetCard(target);
+        }
+        game.getStack().add(sa);
+        game.updateStackForView();
+    }
+
+    @Test
+    void stackSourceInOpponentHandNotRegistered() {
+        Card inHand = opp.getCardsIn(ZoneType.Hand).stream().filter(c -> c.isCreature()).findFirst().orElseThrow();
+        Card libCard = opp.getCardsIn(ZoneType.Library).get(0);
+        putOnStack(inHand, null);
+        GameState s = map();
+        assertEquals(1, s.stack().size());
+        var item = s.stack().get(0);
+        assertFalse(s.cards().containsKey("c" + inHand.getId()));
+        assertFalse(s.cards().containsKey("c" + libCard.getId()));
+        assertNull(item.sourceCardId());
+        assertNull(item.text());
+    }
+
+    @Test
+    void transformedDfcUsesBackFace() {
+        Card c = place(me, "Delver of Secrets", ZoneType.Battlefield);
+        CardDto front = map().cards().get("c" + c.getId());
+        assertFalse(front.imageUrl().contains("face=back"));
+        c.changeCardState("Transform", null, null);
+        CardDto back = map().cards().get("c" + c.getId());
+        assertTrue(back.imageUrl().contains("face=back"), back.imageUrl());
     }
 }

@@ -8,6 +8,7 @@ import app.commanderduel.protocol.Dto.StackItemDto;
 import com.google.common.collect.Multiset;
 import forge.StaticData;
 import forge.card.CardEdition;
+import forge.card.CardStateName;
 import forge.card.mana.ManaAtom;
 import forge.game.GameEntityView;
 import forge.game.GameView;
@@ -145,6 +146,15 @@ public final class StateMapper {
         return id;
     }
 
+    /** Registers the card unless it is a hidden card in a hidden zone (hand/library); then null. */
+    private static String registerIfAllowed(CardView cv, PlayerView viewer, Map<String, CardDto> cards) {
+        ZoneType z = cv.getZone();
+        if ((z == ZoneType.Hand || z == ZoneType.Library) && !visible(cv, viewer)) {
+            return null;
+        }
+        return register(cv, viewer, cards);
+    }
+
     private static boolean visible(CardView cv, PlayerView viewer) {
         return cv.canBeShownTo(viewer) && cv.canFaceDownBeShownTo(viewer);
     }
@@ -168,6 +178,9 @@ public final class StateMapper {
             }
         }
         CardView attached = cv.getAttachedTo();
+        if (attached != null && !visible(attached, viewer)) {
+            attached = null;
+        }
         boolean pt = st.isCreature() || st.isVehicle();
         return new CardDto(
                 cid(cv),
@@ -197,9 +210,10 @@ public final class StateMapper {
             if (pc == null) {
                 return null;
             }
+            String face = st.getState() == CardStateName.Backside ? "back" : "";
             CardEdition ed = StaticData.instance().getEditions().get(pc.getEdition());
             String setCode = ed == null ? null : ed.getScryfallCode();
-            return SCRYFALL + ImageUtil.getScryfallDownloadUrl(pc, "", setCode, "en", false);
+            return SCRYFALL + ImageUtil.getScryfallDownloadUrl(pc, face, setCode, "en", false);
         } catch (RuntimeException e) {
             return null;
         }
@@ -207,11 +221,15 @@ public final class StateMapper {
 
     private static StackItemDto stackItem(StackItemView item, PlayerView viewer, Map<String, CardDto> cards) {
         CardView source = item.getSourceCard();
-        String sourceId = source == null ? null : register(source, viewer, cards);
+        boolean sourceVisible = source != null && visible(source, viewer);
+        String sourceId = source == null ? null : registerIfAllowed(source, viewer, cards);
         List<String> targets = new ArrayList<>();
         if (item.getTargetCards() != null) {
             for (CardView c : item.getTargetCards()) {
-                targets.add(register(c, viewer, cards));
+                String id = registerIfAllowed(c, viewer, cards);
+                if (id != null) {
+                    targets.add(id);
+                }
             }
         }
         if (item.getTargetPlayers() != null) {
@@ -225,7 +243,7 @@ public final class StateMapper {
             }
         }
         PlayerView activator = item.getActivatingPlayer();
-        return new StackItemDto("s" + item.getId(), item.getText(), sourceId,
+        return new StackItemDto("s" + item.getId(), sourceVisible ? item.getText() : null, sourceId,
                 activator == null ? null : pid(activator), targets);
     }
 
