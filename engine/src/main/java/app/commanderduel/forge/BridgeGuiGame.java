@@ -191,7 +191,9 @@ public class BridgeGuiGame extends NetworkGuiGame {
             try {
                 controller.concede();
             } catch (RuntimeException | AssertionError e) {
-                // the concession already stands; the game is ended below
+                // the concession already stands and the game is ended below; just leave a trace
+                System.err.println("bridge-concede: controller.concede() failed: " + e);
+                e.printStackTrace();
             }
         }, "bridge-concede");
         conceder.setDaemon(true);
