@@ -13,9 +13,10 @@ function connect(e: EngineEndpoint): void {
   client.connect(`ws://127.0.0.1:${e.port}/?token=${e.token}`);
 }
 
-async function startConnection(restart: boolean): Promise<void> {
+async function startConnection(restart: boolean, isCancelled: () => boolean = () => false): Promise<void> {
   try {
-    connect(await (restart ? window.duel.restartEngine() : window.duel.getEngine()));
+    const endpoint = await (restart ? window.duel.restartEngine() : window.duel.getEngine());
+    if (!isCancelled()) connect(endpoint);
   } catch (err) {
     console.error('engine unavailable', err);
     useStore.getState().handle({ type: 'engineStopped' });
@@ -25,6 +26,7 @@ async function startConnection(restart: boolean): Promise<void> {
 function EngineStopped() {
   const back = () => {
     useStore.getState().resetGame();
+    useStore.setState({ lobby: null });
     useStore.getState().setScreen('decks');
     void startConnection(true);
   };
@@ -46,8 +48,12 @@ export function App() {
       if (m.type === 'ready') client.send({ type: 'listLobby' });
       if (m.type === 'lobby') console.log(`lobby: ${m.precons.length} precons`);
     });
-    void startConnection(false);
-    return off;
+    let cancelled = false;
+    void startConnection(false, () => cancelled);
+    return () => {
+      cancelled = true;
+      off();
+    };
   }, []);
 
   if (screen === 'engineStopped') return <EngineStopped />;

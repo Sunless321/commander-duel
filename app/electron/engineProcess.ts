@@ -9,6 +9,8 @@ export interface EngineOptions {
   dataDir: string;
   /** Milliseconds to wait for the READY line (default 120 s). */
   readyTimeoutMs?: number;
+  /** Called synchronously with the child as soon as it is spawned, before READY. */
+  onSpawn?: (child: ChildProcess) => void;
 }
 
 export interface RunningEngine {
@@ -31,6 +33,7 @@ export function startEngine(opts: EngineOptions): Promise<RunningEngine> {
       ['-jar', opts.jarPath, '--forge', opts.forgeDir, '--data', opts.dataDir, '--token', token],
       { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
     );
+    opts.onSpawn?.(child);
     let settled = false;
     const timer = setTimeout(() => {
       finish(() => {

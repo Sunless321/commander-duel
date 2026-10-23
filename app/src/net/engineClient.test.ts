@@ -9,7 +9,7 @@ class FakeWebSocket {
   readyState = 1;
   sent: string[] = [];
   onmessage: ((ev: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((ev?: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
   constructor(public url: string) {
     FakeWebSocket.last = this;
@@ -67,6 +67,46 @@ describe('EngineClient', () => {
   });
 });
 
+describe('EngineClient close codes', () => {
+  test('4002 retries instead of reporting engine-stopped', () => {
+    vi.useFakeTimers();
+    try {
+      const c = new EngineClient();
+      const seen: ClientEvent[] = [];
+      c.on((m) => seen.push(m));
+      c.connect('ws://a');
+      c.connect('ws://a');
+      const second = FakeWebSocket.last;
+      second.onclose!({ code: 4002 });
+      expect(seen).toEqual([]);
+      vi.advanceTimersByTime(250);
+      expect(FakeWebSocket.last).not.toBe(second);
+      FakeWebSocket.last.onclose!({ code: 1006 });
+      expect(seen).toEqual([{ type: 'engineStopped' }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('gives up after repeated 4002', () => {
+    vi.useFakeTimers();
+    try {
+      const c = new EngineClient();
+      const seen: ClientEvent[] = [];
+      c.on((m) => seen.push(m));
+      c.connect('ws://a');
+      for (let i = 0; i < 5; i++) {
+        FakeWebSocket.last.onclose!({ code: 4002 });
+        vi.advanceTimersByTime(250);
+      }
+      FakeWebSocket.last.onclose!({ code: 4002 });
+      expect(seen).toEqual([{ type: 'engineStopped' }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('store', () => {
   test('parses state message into store', () => {
     useStore.getState().handle({ type: 'state', state: fixture });
@@ -85,8 +125,12 @@ describe('store', () => {
     expect(useStore.getState().requests.map((r) => r.requestId)).toEqual(['r1', 'r2']);
   });
 
-  test('engineStopped sets the engine-stopped screen', () => {
+  test('engineStopped sets the engine-stopped screen and clears game state', () => {
+    useStore.getState().handle({ type: 'state', state: fixture });
+    useStore.getState().handle({ type: 'playable', cardIds: ['c1'] });
     useStore.getState().handle({ type: 'engineStopped' });
+    expect(useStore.getState().game).toBeNull();
+    expect(useStore.getState().playable.size).toBe(0);
     expect(useStore.getState().screen).toBe('engineStopped');
   });
 });

@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { app, BrowserWindow, ipcMain } from 'electron';
@@ -7,7 +8,13 @@ import { startEngine, type EngineOptions, type RunningEngine } from './enginePro
 app.setName('Commander Duel');
 
 let engine: Promise<RunningEngine> | null = null;
-let current: RunningEngine | null = null;
+// The newest engine child, tracked from spawn (not READY) so quit/restart also reach a still-starting engine.
+let child: ChildProcess | null = null;
+
+function killEngine(): void {
+  child?.kill();
+  child = null;
+}
 
 function enginePaths(): Omit<EngineOptions, 'dataDir'> {
   if (app.isPackaged) {
@@ -32,14 +39,10 @@ function enginePaths(): Omit<EngineOptions, 'dataDir'> {
 }
 
 function launchEngine(): Promise<RunningEngine> {
-  current?.child.kill();
-  current = null;
-  const p = Promise.resolve()
-    .then(() => startEngine({ ...enginePaths(), dataDir: app.getPath('userData') }))
-    .then((e) => {
-      current = e;
-      return e;
-    });
+  killEngine();
+  const p = Promise.resolve().then(() =>
+    startEngine({ ...enginePaths(), dataDir: app.getPath('userData'), onSpawn: (c) => (child = c) }),
+  );
   engine = p;
   return p;
 }
@@ -72,5 +75,5 @@ app.whenReady().then(() => {
   createWindow();
 });
 
-app.on('before-quit', () => current?.child.kill());
+app.on('before-quit', killEngine);
 app.on('window-all-closed', () => app.quit());

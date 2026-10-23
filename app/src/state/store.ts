@@ -78,7 +78,7 @@ export const useStore = create<StoreState>((set) => ({
         case 'error':
           return { lastError: m.message };
         case 'engineStopped':
-          return { screen: 'engineStopped', requests: [] };
+          return { ...freshGame(), screen: 'engineStopped' };
         default:
           return {};
       }
