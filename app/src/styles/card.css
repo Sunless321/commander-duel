@@ -1,0 +1,55 @@
+.card {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 6px;
+  overflow: hidden;
+  flex: none;
+  background: #1b2030;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.card.hand { width: 108px; height: 150px; }
+.card.field { width: 74px; height: 104px; }
+.card.stack { width: 86px; height: 120px; }
+.card img { width: 100%; height: 100%; display: block; object-fit: cover; user-select: none; }
+
+.card.tapped { transform: rotate(90deg); }
+.card.glow { box-shadow: 0 0 0 2px #4fb3ff, 0 0 12px 2px rgba(79, 179, 255, 0.6); transform: translateY(-4px); }
+.card.glow.tapped { transform: rotate(90deg) translateY(-4px); }
+.card.selectable { box-shadow: 0 0 0 2px #d4a64a; cursor: pointer; }
+.card.chosen { box-shadow: 0 0 0 3px #fff; }
+
+/* Pure-CSS card back: navy field, gold inset border, faint diamond pattern. */
+.card.card-back {
+  background-color: #14213d;
+  background-image:
+    linear-gradient(45deg, rgba(212, 166, 74, 0.12) 25%, transparent 25%, transparent 75%, rgba(212, 166, 74, 0.12) 75%),
+    linear-gradient(45deg, rgba(212, 166, 74, 0.12) 25%, transparent 25%, transparent 75%, rgba(212, 166, 74, 0.12) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 6px 6px;
+  box-shadow: inset 0 0 0 3px #14213d, inset 0 0 0 5px #d4a64a;
+}
+.card.card-back.glow { box-shadow: inset 0 0 0 3px #14213d, inset 0 0 0 5px #d4a64a, 0 0 0 2px #4fb3ff, 0 0 12px 2px rgba(79, 179, 255, 0.6); }
+.card.card-back.selectable { box-shadow: inset 0 0 0 3px #14213d, inset 0 0 0 5px #d4a64a, 0 0 0 2px #d4a64a; }
+.card.card-back.chosen { box-shadow: inset 0 0 0 3px #14213d, inset 0 0 0 5px #d4a64a, 0 0 0 3px #fff; }
+
+/* Text-frame fallback when no image is available. */
+.card-text {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #e8e0cc;
+  color: #1a1a1a;
+  font-size: 9px;
+  line-height: 1.15;
+  border: 2px solid #3a3226;
+  border-radius: 6px;
+}
+.card.hand .card-text { font-size: 11px; }
+.card-text-head { display: flex; justify-content: space-between; gap: 4px; font-weight: 700; }
+.card-cost { white-space: nowrap; font-weight: 400; }
+.card-type { font-style: italic; }
+.card-pt { margin-top: auto; align-self: flex-end; font-weight: 700; }
