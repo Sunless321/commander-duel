@@ -349,7 +349,11 @@ public class BridgeGuiGame extends NetworkGuiGame {
         if ("prompt".equals(type) || "request".equals(type) || "selection".equals(type)) {
             // The client decides from the pair (state, prompt): the matching snapshot must arrive first,
             // not up to a debounce interval later.
-            sendState();
+            try {
+                sendState();
+            } catch (RuntimeException e) {
+                scheduleState(); // never let a failed snapshot swallow the prompt itself
+            }
         }
         String json = Json.GSON.toJson(msg);
         synchronized (out) {
