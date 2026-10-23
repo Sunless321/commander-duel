@@ -42,6 +42,16 @@ class PendingRequestsTest {
         assertFalse(p.future().isDone());
     }
 
+    @Test void validatorRejectsAndKeepsRequestOpen() throws Exception {
+        PendingRequests.Pending<String> p = reg.open("order", List.of("a", "b"), 2, 2, chosen -> chosen.get(0).equals("b"));
+        PendingRequests.Result r = reg.answer(p.requestId(), List.of("o0", "o1"));
+        assertFalse(r.ok());
+        assertTrue(r.reason().contains("invalid order answer"));
+        assertFalse(p.future().isDone());
+        assertTrue(reg.answer(p.requestId(), List.of("o1", "o0")).ok());
+        assertEquals(List.of("b", "a"), p.future().get());
+    }
+
     @Test void unknownRequestIdRejected() {
         assertFalse(reg.answer("r999", List.of("o0")).ok());
     }

@@ -58,6 +58,14 @@ public final class PendingRequests {
     private final AtomicLong counter = new AtomicLong();
 
     public <T> Pending<T> open(String kind, List<T> options, int min, int max) {
+        return open(kind, options, min, max, chosen -> true);
+    }
+
+    /**
+     * Like {@link #open(String, List, int, int)}, but the chosen objects (in answer order) must also
+     * satisfy {@code validator}; otherwise the answer is rejected and the request stays open.
+     */
+    public <T> Pending<T> open(String kind, List<T> options, int min, int max, Predicate<List<T>> validator) {
         List<T> objs = List.copyOf(options);
         List<String> ids = new ArrayList<>(objs.size());
         for (int i = 0; i < objs.size(); i++) ids.add("o" + i);
@@ -76,6 +84,7 @@ public final class PendingRequests {
                     if (!seen.add(id)) throw new IllegalArgumentException("duplicate option id: " + id);
                     chosen.add(objs.get(idx));
                 }
+                if (!validator.test(chosen)) throw new IllegalArgumentException("invalid " + kind + " answer: " + given);
                 return chosen;
             }
 
