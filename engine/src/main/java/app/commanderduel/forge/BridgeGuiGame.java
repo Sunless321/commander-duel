@@ -18,7 +18,9 @@ import forge.game.GameView;
 import forge.game.card.CardView;
 import forge.game.card.CounterEnumType;
 import forge.game.phase.PhaseType;
+import forge.game.GameEndReason;
 import forge.game.player.DelayedReveal;
+import forge.game.player.Player;
 import forge.game.player.IHasIcon;
 import forge.game.player.PlayerView;
 import forge.game.player.RegisteredPlayer;
@@ -50,6 +52,8 @@ import forge.trackable.TrackableObject;
 import forge.trackable.TrackableTypes;
 import forge.util.FSerializableFunction;
 import forge.util.ITriggerEvent;
+import forge.util.Localizer;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -69,6 +73,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * The engine side of the UI. Every Forge notification becomes a JSON message on the {@link Transport};
@@ -94,6 +99,7 @@ public class BridgeGuiGame extends NetworkGuiGame {
     private final AtomicBoolean stateScheduled = new AtomicBoolean();
     private final AtomicInteger stateFailures = new AtomicInteger();
     private final AtomicBoolean gameOverSent = new AtomicBoolean();
+    private volatile boolean gameEnded;
 
     private final Object promptLock = new Object();
     private String promptMessage = "";
@@ -165,15 +171,82 @@ public class BridgeGuiGame extends NetworkGuiGame {
                 actions.execute(() -> controller.useMana(mana));
             }
             // Not queued behind the action thread, which may be parked on an open request.
-            case "concede" -> CompletableFuture.runAsync(() -> {
-                controller.concede();
-                Game host = game.getGame();
-                if (host == null || host.isGameOver()) {
-                    pending.cancelAll(); // release a game thread parked on a request so the game can finish
-                }
-            }, scheduler);
+            case "concede" -> CompletableFuture.runAsync(() -> concede(controller, game.getGame()), scheduler);
             default -> reject(null, "unknown action: " + action);
         }
+    }
+
+    /**
+     * Concedes for the human. With bots left over, Forge's concede only removes the human; like the desktop
+     * (AbstractGuiGame.forceEndGameForRemainingAIs) the game is then ended, since no human is left in it.
+     */
+    private void concede(IGameController controller, Game host) {
+        if (host == null || host.isGameOver()) {
+            return;
+        }
+        // PlayerControllerHuman.concede marks the player conceded, then runs Forge's game-over check off the
+        // game thread, where it can race the game thread (seen: an NPE in trigger handling) or wait on it.
+        // So it runs on its own thread, and the game is ended as soon as the concession stands.
+        Thread conceder = new Thread(() -> {
+            try {
+                controller.concede();
+            } catch (RuntimeException | AssertionError e) {
+                // the concession already stands; the game is ended below
+            }
+        }, "bridge-concede");
+        conceder.setDaemon(true);
+        conceder.start();
+        try {
+            conceder.join(2_000); // let Forge end the game itself when it can
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        if (!waitFor(() -> host.isGameOver() || allHumansLost(host))) {
+            return;
+        }
+        if (!host.isGameOver()) {
+            host.getAction().invoke(() -> host.setGameOver(GameEndReason.AllHumansLost));
+        }
+        if (waitFor(host::isGameOver)) {
+            endGame(); // release a game thread parked on a request so the game can finish
+            sendGameOver();
+        }
+    }
+
+    private static boolean waitFor(java.util.function.BooleanSupplier condition) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (!condition.getAsBoolean()) {
+            if (System.currentTimeMillis() > deadline) {
+                return false;
+            }
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean allHumansLost(Game host) {
+        for (Player p : host.getRegisteredPlayers()) {
+            if (p.getController() instanceof PlayerControllerHuman && p.getOutcome() == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Game-end only: from now on blocking decisions answer with their fallback at once, and every open
+     * request is cancelled (its parked caller gets the fallback). The flag is set before cancelling, so a
+     * request opened concurrently sees it and is cancelled too.
+     */
+    private void endGame() {
+        gameEnded = true;
+        pending.cancelAll();
     }
 
     /** Answers an option request; anything Forge did not offer is rejected and the request stays open. */
@@ -527,16 +600,16 @@ public class BridgeGuiGame extends NetworkGuiGame {
 
     @Override
     public void finishGame() {
+        endGame();
         sendGameOver();
-        pending.cancelAll();
         scheduleState();
     }
 
     @Override
     public void afterGameEnd() {
         super.afterGameEnd();
+        endGame();
         sendGameOver();
-        pending.cancelAll();
     }
 
     private void sendGameOver() {
@@ -571,6 +644,10 @@ public class BridgeGuiGame extends NetworkGuiGame {
     /** Opens an option request, sends it, and parks the calling Forge thread until it is answered. */
     private <T> List<T> ask(String kind, String title, String message, List<T> options, Function<T, String> label,
                             int min, int max, Map<String, Object> extras, Predicate<List<T>> validator) {
+        Supplier<List<T>> fallback = () -> new ArrayList<>(options.subList(0, min));
+        if (gameEnded) {
+            return fallback.get();
+        }
         Pending<T> p = pending.open(kind, options, min, max, validator);
         List<Option> wire = new ArrayList<>(options.size());
         for (int i = 0; i < options.size(); i++) {
@@ -580,12 +657,15 @@ public class BridgeGuiGame extends NetworkGuiGame {
         Map<String, Object> m = request(p.requestId(), kind, title, message, wire, min, max, extras);
         send(m);
         // If the game ends while we wait, give Forge the smallest legal answer it offered.
-        return await(p.future(), () -> new ArrayList<>(options.subList(0, min)));
+        return await(p.future(), fallback);
     }
 
     /** Opens a value request (integer, text, amounts) and parks the calling Forge thread until it is answered. */
     private <R> R askValue(String kind, Class<R> type, Predicate<R> validator, String title, String message,
                            List<Option> options, int min, int max, Map<String, Object> extras, Supplier<R> onCancel) {
+        if (gameEnded) {
+            return onCancel.get();
+        }
         PendingValue<R> p = pending.openValue(kind, type, validator);
         send(request(p.requestId(), kind, title, message, options, min, max, extras));
         return await(p.future(), onCancel);
@@ -605,7 +685,14 @@ public class BridgeGuiGame extends NetworkGuiGame {
         return m;
     }
 
-    private static <V> V await(CompletableFuture<V> future, Supplier<V> onCancel) {
+    /**
+     * Parks the calling Forge thread until the request is answered. Cancellation and the fallback are for
+     * game end only ({@link #endGame}): a request opened as the game ended is cancelled here.
+     */
+    private <V> V await(CompletableFuture<V> future, Supplier<V> onCancel) {
+        if (gameEnded) {
+            pending.cancelAll();
+        }
         try {
             return future.get();
         } catch (InterruptedException e) {
@@ -675,13 +762,11 @@ public class BridgeGuiGame extends NetworkGuiGame {
             all.addAll(destChoices);
         }
         int n = all.size();
-        // Forge bounds how many objects may stay unchosen; the answer is the chosen list, in order.
-        int lo = 0;
-        int hi = n;
-        if (remainingObjectsMax >= 0) {
-            lo = Math.max(0, n - remainingObjectsMax);
-            hi = Math.min(n, n - Math.max(0, remainingObjectsMin));
-        }
+        // Forge bounds how many objects may stay unchosen (a negative bound is open); the answer is the
+        // chosen list, in order. Each bound applies on its own, so many(min, max) never accepts more than max.
+        int[] bounds = orderBounds(n, remainingObjectsMin, remainingObjectsMax);
+        int lo = bounds[0];
+        int hi = bounds[1];
         Map<String, Object> extras = new LinkedHashMap<>();
         extras.put("ordered", true);
         extras.put("top", top);
@@ -689,6 +774,13 @@ public class BridgeGuiGame extends NetworkGuiGame {
         extras.put("cardId", idOf(referenceCard));
         List<T> ordered = ask("order", title, top, all, String::valueOf, lo, hi, extras, chosen -> true);
         return new OrderResult<>(ordered, false);
+    }
+
+    /** {min, max} chosen objects out of {@code n} when between remainingMin and remainingMax may stay unchosen. */
+    static int[] orderBounds(int n, int remainingMin, int remainingMax) {
+        int hi = remainingMin >= 0 ? Math.max(0, n - remainingMin) : n;
+        int lo = remainingMax >= 0 ? Math.max(0, n - remainingMax) : 0;
+        return new int[] {Math.min(lo, hi), hi};
     }
 
     @Override
@@ -725,6 +817,9 @@ public class BridgeGuiGame extends NetworkGuiGame {
             indexes.add(i);
         }
         int fallback = extras.get("default") instanceof Integer d && d >= 0 && d < labels.size() ? d : 0;
+        if (gameEnded) {
+            return fallback;
+        }
         Pending<Integer> p = pending.open("confirm", indexes, 1, 1);
         List<Option> wire = new ArrayList<>();
         for (int i = 0; i < labels.size(); i++) {
@@ -732,6 +827,59 @@ public class BridgeGuiGame extends NetworkGuiGame {
         }
         send(request(p.requestId(), "confirm", title, message, wire, 1, 1, extras));
         return await(p.future(), () -> List.of(fallback)).get(0);
+    }
+
+    /**
+     * AbstractGuiGame.getInteger, except that the "Other..." number is one {@code text} request validated
+     * exactly like Forge's re-ask loop (StringUtils.isNumeric and min..max), so bad input is rejected.
+     */
+    @Override
+    public Integer getInteger(String message, int min, int max, int cutoff) {
+        if (max <= min || cutoff < min) {
+            return min;
+        }
+        if (cutoff >= max) {
+            return getInteger(message, min, max, false);
+        }
+        List<Serializable> choices = new ArrayList<>();
+        for (int i = min; i <= cutoff; i++) {
+            choices.add(i);
+        }
+        Localizer localizer = Localizer.getInstance();
+        choices.add(localizer.getMessage("lblOtherInteger"));
+        Object choice = oneOrNone(message, choices);
+        if (choice instanceof Integer || choice == null) {
+            return (Integer) choice;
+        }
+        String prompt = "";
+        if (min != Integer.MIN_VALUE) {
+            prompt = max != Integer.MAX_VALUE
+                    ? localizer.getMessage("lblEnterNumberBetweenMinAndMax", min, max)
+                    : localizer.getMessage("lblEnterNumberGreaterThanOrEqualsToMin", min);
+        } else if (max != Integer.MAX_VALUE) {
+            prompt = localizer.getMessage("lblEnterNumberLessThanOrEqualsToMax", max);
+        }
+        Map<String, Object> extras = new LinkedHashMap<>();
+        extras.put("initial", "");
+        extras.put("numeric", true);
+        extras.put("min", min);
+        extras.put("max", max);
+        String text = askValue("text", String.class, s -> isIntegerInRange(s, min, max), message, prompt,
+                List.of(), 0, 0, extras, () -> null);
+        return text == null ? null : Integer.parseInt(text);
+    }
+
+    /** Forge's getInteger acceptance test: digits only (StringUtils.isNumeric) and within min..max. */
+    static boolean isIntegerInRange(String s, int min, int max) {
+        if (!StringUtils.isNumeric(s)) {
+            return false;
+        }
+        try {
+            int v = Integer.parseInt(s);
+            return v >= min && v <= max;
+        } catch (NumberFormatException e) {
+            return false; // too many digits for an int
+        }
     }
 
     @Override
@@ -885,38 +1033,31 @@ public class BridgeGuiGame extends NetworkGuiGame {
     public Map<CardView, Integer> assignCombatDamage(CardView attacker, List<CardView> blockers, int damage,
                                                      GameEntityView defender, boolean overrideOrder, boolean maySkip) {
         // Mirrors forge-gui-desktop VAssignCombatDamage: who may receive damage and in which order.
+        // "Trample over planeswalkers": Combat already lists the attacked planeswalker among the blockers and
+        // passes its controller as the defender (PCH.assignCombatDamage's last case covers a battle defender);
+        // the keyword parses as TRAMPLE, so hasTrample() is true and the defender is offered, as on the desktop.
         boolean deathtouch = attacker.getCurrentState().hasDeathtouch();
         boolean infect = attacker.getCurrentState().hasInfect();
-        boolean trample = defender != null && attacker.getCurrentState().hasTrample();
+        boolean trample = attacker.getCurrentState().hasTrample();
         boolean divide = attacker.getCurrentState().hasDivideDamage();
         List<Target> targets = new ArrayList<>();
         for (CardView b : blockers) {
-            targets.add(target(b, idOf(b), String.valueOf(b), damage, lethalFor(b, deathtouch), false));
+            boolean pw = b.getCurrentState().isPlaneswalker();
+            int lethal = lethalDamage(b.getLethalDamage(), pw, pw ? parseOrZero(b.getCurrentState().getLoyalty()) : 0, deathtouch);
+            targets.add(target(b, idOf(b), String.valueOf(b), damage, lethal, false));
         }
-        if (trample || (divide && overrideOrder)) {
-            targets.add(target(null, idOf(defender), String.valueOf(defender), damage, defenderLethal(defender, infect), true));
+        if (offersDefender(defender != null, trample, divide, overrideOrder)) {
+            // The desktop also offers a defender slot when divide + overrideOrder come without a defender.
+            String id = defender == null ? "defender" : idOf(defender);
+            targets.add(target(null, id, defender == null ? "defender" : String.valueOf(defender), damage,
+                    defenderLethal(defender, infect), true));
         }
-        boolean freeOrder = overrideOrder && divide;
-        Predicate<Map<String, Integer>> rules = amounts -> {
-            if (sum(amounts) != damage) {
-                return false;
-            }
-            if (freeOrder) {
-                return true;
-            }
-            boolean aliveBefore = false; // a target before this one is not yet dealt lethal damage
-            for (Target t : targets) {
-                int dmg = amounts.getOrDefault(t.id(), 0);
-                if (aliveBefore && (!overrideOrder || t.defender())) {
-                    if (dmg != 0) {
-                        return false;
-                    }
-                } else {
-                    aliveBefore |= dmg < t.lethal();
-                }
-            }
-            return true;
-        };
+        List<DamageSlot> slots = new ArrayList<>();
+        for (Target t : targets) {
+            slots.add(new DamageSlot(t.lethal(), t.defender()));
+        }
+        Predicate<Map<String, Integer>> rules = amounts ->
+                isLegalCombatDamage(slots, assignedInOrder(targets, amounts), damage, overrideOrder, divide);
         Map<String, Object> extras = amountExtras(damage, targets, maySkip);
         extras.put("attackerId", idOf(attacker));
         Map<String, Integer> answer = askAmounts("damage", "Assign damage dealt by " + attacker, targets, rules, maySkip, extras,
@@ -937,12 +1078,76 @@ public class BridgeGuiGame extends NetworkGuiGame {
         return m;
     }
 
-    private static int lethalFor(CardView card, boolean deathtouch) {
-        int lethal = Math.max(0, card.getLethalDamage());
-        if (card.getCurrentState().isPlaneswalker()) {
-            return parseOrZero(card.getCurrentState().getLoyalty());
+    /** One recipient of combat damage, in Forge's order: the damage lethal to it, and whether it is the defender. */
+    record DamageSlot(int lethal, boolean defender) {}
+
+    /** Whether the defender (player or planeswalker) receives damage, as in VAssignCombatDamage. */
+    static boolean offersDefender(boolean hasDefender, boolean trample, boolean divide, boolean overrideOrder) {
+        return (hasDefender && trample) || (divide && overrideOrder);
+    }
+
+    /** The damage that counts as lethal for a blocker (VAssignCombatDamage.getDamageToKill). */
+    static int lethalDamage(int lethalDamage, boolean planeswalker, int loyalty, boolean deathtouch) {
+        if (planeswalker) {
+            return loyalty;
         }
+        int lethal = Math.max(0, lethalDamage);
         return deathtouch ? Math.min(lethal, 1) : lethal;
+    }
+
+    /**
+     * The total must be exact and non-negative. Unless the attacker may divide its damage freely
+     * (divide + overrideOrder), a recipient may only get damage once every recipient before it has lethal
+     * damage; with overrideOrder alone only the defender is held to that (VAssignCombatDamage.checkDamageQueue).
+     */
+    static boolean isLegalCombatDamage(List<DamageSlot> slots, List<Integer> assigned, int damage,
+                                       boolean overrideOrder, boolean divide) {
+        int total = 0;
+        for (int v : assigned) {
+            if (v < 0) {
+                return false;
+            }
+            total += v;
+        }
+        if (total != damage) {
+            return false;
+        }
+        if (overrideOrder && divide) {
+            return true;
+        }
+        boolean aliveBefore = false; // a recipient before this one is not yet dealt lethal damage
+        for (int i = 0; i < slots.size(); i++) {
+            int dmg = assigned.get(i);
+            if (aliveBefore && (!overrideOrder || slots.get(i).defender())) {
+                if (dmg != 0) {
+                    return false;
+                }
+            } else {
+                aliveBefore |= dmg < slots.get(i).lethal();
+            }
+        }
+        return true;
+    }
+
+    /** Each target 0..its cap (at least 1 if atLeastOne) and an exact total (VAssignGenericAmount). */
+    static boolean isLegalAmounts(List<Integer> caps, List<Integer> assigned, int amount, boolean atLeastOne) {
+        int total = 0;
+        for (int i = 0; i < caps.size(); i++) {
+            int v = assigned.get(i);
+            if (v < 0 || v > caps.get(i) || (atLeastOne && v < 1)) {
+                return false;
+            }
+            total += v;
+        }
+        return total == amount;
+    }
+
+    private static List<Integer> assignedInOrder(List<Target> targets, Map<String, Integer> amounts) {
+        List<Integer> out = new ArrayList<>();
+        for (Target t : targets) {
+            out.add(amounts.getOrDefault(t.id(), 0));
+        }
+        return out;
     }
 
     private int defenderLethal(GameEntityView defender, boolean infect) {
@@ -975,18 +1180,12 @@ public class BridgeGuiGame extends NetworkGuiGame {
             targets.add(target(key, id != null ? id : "t" + i, String.valueOf(key), e.getValue() != null ? e.getValue() : amount, 0, false));
             i++;
         }
-        Predicate<Map<String, Integer>> rules = amounts -> {
-            if (sum(amounts) != amount) {
-                return false;
-            }
-            for (Target t : targets) {
-                int v = amounts.getOrDefault(t.id(), 0);
-                if (v > t.max() || (atLeastOne && v < 1)) {
-                    return false;
-                }
-            }
-            return true;
-        };
+        List<Integer> caps = new ArrayList<>();
+        for (Target t : targets) {
+            caps.add(t.max());
+        }
+        Predicate<Map<String, Integer>> rules = amounts ->
+                isLegalAmounts(caps, assignedInOrder(targets, amounts), amount, atLeastOne);
         Map<String, Object> extras = amountExtras(amount, targets, false);
         extras.put("atLeastOne", atLeastOne);
         extras.put("label", amountLabel);
@@ -1039,14 +1238,6 @@ public class BridgeGuiGame extends NetworkGuiGame {
         extras.put("targets", wire);
         extras.put("maySkip", maySkip);
         return extras;
-    }
-
-    private static int sum(Map<String, Integer> amounts) {
-        int s = 0;
-        for (int v : amounts.values()) {
-            s += v;
-        }
-        return s;
     }
 
     /**

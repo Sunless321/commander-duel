@@ -156,4 +156,29 @@ class BridgeGameTest {
         assertEquals(1, over.getAsJsonArray("winnerNames").size());
         assertTrue(over.getAsJsonArray("winnerNames").get(0).getAsString().endsWith(" Bot"));
     }
+
+    @Test
+    void concedeWithThreeBotsEndsGame() throws Exception {
+        start(3);
+        assertTrue(client.await(c -> c.latestTurn() >= 1, 60_000));
+        gui.onAction("concede", null, null);
+        assertTrue(client.await(c -> !c.ofType("gameOver").isEmpty(), 30_000), "gameOver sent");
+        assertFalse(client.ofType("gameOver").get(0).get("youWon").getAsBoolean());
+        assertTrue(client.await(c -> match.getGame() == null || match.getGame().isGameOver(), 30_000), "the game ended");
+    }
+
+    @Test
+    void blockingCallsAfterGameEndReturnAtOnce() throws Exception {
+        start(1);
+        assertTrue(client.await(c -> c.latestTurn() >= 1, 60_000));
+        gui.onAction("concede", null, null);
+        assertTrue(client.await(c -> !c.ofType("gameOver").isEmpty(), 30_000), "gameOver sent");
+        int requestsBefore = client.ofType("request").size();
+        List<PlayerView> players = List.copyOf(gui.getGameView().getPlayers());
+        List<PlayerView> picked = CompletableFuture
+                .supplyAsync(() -> gui.getChoices("After the game", 1, 1, players, null, null))
+                .get(5, TimeUnit.SECONDS);
+        assertEquals(List.of(players.get(0)), picked, "the smallest legal answer, without asking");
+        assertEquals(requestsBefore, client.ofType("request").size(), "no request sent after game end");
+    }
 }
