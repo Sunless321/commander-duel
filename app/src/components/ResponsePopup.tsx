@@ -23,12 +23,12 @@ export function ResponsePopup() {
   const playable = useStore((s) => s.playable);
   const mode = useStore((s) => s.respondMode);
   const tipDismissed = useStore((s) => s.respondTipDismissed);
-  const promptFresh = useStore((s) => s.promptFresh);
+  const stateSeq = useStore((s) => s.stateSeq);
   const requestOpen = useStore((s) => s.requests.length > 0);
   const passedKey = useRef<string | null>(null);
 
   // An open request always wins, and then we neither show nor answer anything.
-  const decision = requestOpen || !game || !promptFresh
+  const decision = requestOpen || !game || !prompt || prompt.stateSeq !== stateSeq
     ? 'none'
     : decideResponse({ prompt, game, playable, mode, youId: game.youId });
 

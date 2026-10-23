@@ -56,12 +56,8 @@ export interface StoreState {
   lastStart: StartGameMsg | null;
   respondMode: RespondMode;
   respondTipDismissed: boolean;
-  /** Arrival counter for state/prompt messages, to tell whether a prompt is paired with a fresh state. */
-  seq: number;
-  lastStateSeq: number;
-  lastPromptSeq: number;
-  /** False while the current prompt arrived with no state since the previous prompt (its state is still in flight). */
-  promptFresh: boolean;
+  /** Seq of the applied state; a prompt is only acted on when its stateSeq equals this. */
+  stateSeq: number;
   handle: (m: ClientEvent) => void;
   setScreen: (s: Screen) => void;
   setRespondMode: (m: RespondMode) => void;
@@ -76,10 +72,7 @@ export interface StoreState {
 }
 
 const freshGame = () => ({
-  seq: 0,
-  lastStateSeq: 0,
-  lastPromptSeq: 0,
-  promptFresh: false,
+  stateSeq: -1,
   game: null,
   prompt: null,
   selection: null,
@@ -114,17 +107,10 @@ export const useStore = create<StoreState>((set) => ({
           return {
             game: m.state,
             screen: s.screen === 'gameOver' ? s.screen : 'board',
-            seq: s.seq + 1,
-            lastStateSeq: s.seq + 1,
-            promptFresh: true,
+            stateSeq: m.seq,
           };
         case 'prompt':
-          return {
-            prompt: m,
-            seq: s.seq + 1,
-            lastPromptSeq: s.seq + 1,
-            promptFresh: s.lastStateSeq > s.lastPromptSeq,
-          };
+          return { prompt: m };
         case 'selection':
           return { selection: m };
         case 'playable':

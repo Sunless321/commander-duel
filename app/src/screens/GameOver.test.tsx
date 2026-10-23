@@ -31,7 +31,7 @@ test('play again resends the same setup and moves to the board when the game beg
   fireEvent.click(screen.getByRole('button', { name: 'Play again' }));
   expect(sent).toEqual([start]);
   expect(screen.queryByText('Bot 1 won')).not.toBeNull();
-  act(() => useStore.getState().handle({ type: 'prompt', message: 'Play or draw?', inputKind: 'other', ok: null, cancel: null }));
+  act(() => useStore.getState().handle({ type: 'prompt', stateSeq: 1, message: 'Play or draw?', inputKind: 'other', ok: null, cancel: null }));
   expect(useStore.getState().screen).toBe('board');
 });
 

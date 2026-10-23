@@ -3,7 +3,7 @@ import type { GameState, InputKind, PromptMsg } from '../net/protocol';
 import { decideResponse } from './respondPolicy';
 
 const prompt = (over: Partial<PromptMsg> = {}): PromptMsg => ({
-  type: 'prompt', message: 'You have priority', inputKind: 'priority',
+  type: 'prompt', stateSeq: 1, message: 'You have priority', inputKind: 'priority',
   ok: { label: 'OK', enabled: true }, cancel: null, ...over,
 });
 

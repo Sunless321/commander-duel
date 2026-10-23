@@ -61,7 +61,7 @@ const glows = (id: string) => cardEl(id).classList.contains('glow');
 
 test('glowing cards = playable ∩ your hand/battlefield; none when selection active', () => {
   act(() => {
-    useStore.getState().handle({ type: 'state', state: game() });
+    useStore.getState().handle({ type: 'state', seq: 1, state: game() });
     useStore.getState().handle({ type: 'playable', cardIds: ['c1', 'c3', 'c4', 'c99'] });
   });
   render(<Board />);
@@ -70,7 +70,7 @@ test('glowing cards = playable ∩ your hand/battlefield; none when selection ac
   expect(glows('c3')).toBe(true);
   expect(glows('c4')).toBe(false);
 
-  act(() => useStore.getState().handle({ type: 'selection', selectable: ['c4', 'p2'], chosen: ['c3'], min: 1, max: 1 }));
+  act(() => useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: ['c4', 'p2'], chosen: ['c3'], min: 1, max: 1 }));
   for (const id of ['c1', 'c2', 'c3', 'c4']) expect(glows(id)).toBe(false);
   expect(cardEl('c4').classList.contains('selectable')).toBe(true);
   expect(cardEl('c3').classList.contains('chosen')).toBe(true);
@@ -87,7 +87,7 @@ test('glowing cards = playable ∩ your hand/battlefield; none when selection ac
 
 test('ok button mirrors engine label and enabled flag', () => {
   act(() => useStore.getState().handle({
-    type: 'prompt', message: 'Keep this hand?', inputKind: 'mulligan',
+    type: 'prompt', stateSeq: 1, message: 'Keep this hand?', inputKind: 'mulligan',
     ok: { label: 'Keep', enabled: false }, cancel: { label: 'Mulligan', enabled: true },
   }));
   // Prompts arrive before the first state: the bar renders without a game.
@@ -102,7 +102,7 @@ test('ok button mirrors engine label and enabled flag', () => {
 });
 
 test('opponent hand renders count of card backs', () => {
-  act(() => useStore.getState().handle({ type: 'state', state: game() }));
+  act(() => useStore.getState().handle({ type: 'state', seq: 1, state: game() }));
   render(<Board />);
   const hand = document.querySelector('[data-player-id="p2"] .opp-hand') as HTMLElement;
   expect(hand.querySelectorAll('.card.card-back').length).toBe(5);
@@ -118,7 +118,7 @@ const inPlayer = (pid: string) => within(document.querySelector(`[data-panel-for
 test('a playable card in your graveyard is lit in the zone viewer and clicking it sends selectCard', () => {
   act(() => {
     useStore.getState().handle({
-      type: 'state',
+      type: 'state', seq: 1,
       state: stateWith((g) => {
         g.players[0].graveyard = ['c7'];
         g.cards.c7 = card('c7', 'p1', 'Graveyard', { name: 'Think Twice' });
@@ -140,13 +140,13 @@ test('a playable card in your graveyard is lit in the zone viewer and clicking i
 test("a selectable card in an opponent's exile is reachable", () => {
   act(() => {
     useStore.getState().handle({
-      type: 'state',
+      type: 'state', seq: 1,
       state: stateWith((g) => {
         g.players[1].exile = ['c8'];
         g.cards.c8 = card('c8', 'p2', 'Exile', { name: 'Exiled Thing' });
       }),
     });
-    useStore.getState().handle({ type: 'selection', selectable: ['c8'], chosen: [], min: 1, max: 1 });
+    useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: ['c8'], chosen: [], min: 1, max: 1 });
   });
   render(<Board />);
   fireEvent.click(inPlayer('p2').getByRole('button', { name: /^Exile \(1\), has playable/ }));
@@ -160,7 +160,7 @@ test("a selectable card in an opponent's exile is reachable", () => {
 test('an offered card in no rendered zone appears in the Playable elsewhere strip', () => {
   act(() => {
     useStore.getState().handle({
-      type: 'state',
+      type: 'state', seq: 1,
       state: stateWith((g) => {
         g.cards.c9 = card('c9', 'p1', 'Library', { name: 'Top Card' });
       }),
@@ -175,7 +175,7 @@ test('an offered card in no rendered zone appears in the Playable elsewhere stri
 });
 
 test('concede asks in the page first, then sends concede', () => {
-  act(() => useStore.getState().handle({ type: 'state', state: game() }));
+  act(() => useStore.getState().handle({ type: 'state', seq: 1, state: game() }));
   render(<Board />);
   fireEvent.click(screen.getByRole('button', { name: 'Concede' }));
   expect(screen.queryByText('Concede this game?')).not.toBeNull();
@@ -187,7 +187,7 @@ test('concede asks in the page first, then sends concede', () => {
 });
 
 test('a hand card is a button that Enter and Space activate', async () => {
-  act(() => useStore.getState().handle({ type: 'state', state: game() }));
+  act(() => useStore.getState().handle({ type: 'state', seq: 1, state: game() }));
   render(<Board />);
   const user = userEvent.setup();
   const c1 = within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Card c1' });
@@ -203,10 +203,25 @@ test('a hand card is a button that Enter and Space activate', async () => {
 
 test('a chosen-only selection keeps the glow', () => {
   act(() => {
-    useStore.getState().handle({ type: 'state', state: game() });
+    useStore.getState().handle({ type: 'state', seq: 1, state: game() });
     useStore.getState().handle({ type: 'playable', cardIds: ['c3'] });
-    useStore.getState().handle({ type: 'selection', selectable: [], chosen: ['p2'], min: 0, max: 0 });
+    useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: [], chosen: ['p2'], min: 0, max: 0 });
   });
   render(<Board />);
   expect(glows('c3')).toBe(true);
+});
+
+test('choosing the starting player: every panel, including your own, is selectable and clickable', () => {
+  const g = game();
+  g.players.push(player('p3', 'Bot 2', false, { handCount: 5 }));
+  act(() => {
+    useStore.getState().handle({ type: 'state', seq: 1, state: g });
+    useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: ['p1', 'p2', 'p3'], chosen: [], min: 1, max: 1 });
+  });
+  render(<Board />);
+  for (const id of ['p1', 'p2', 'p3']) {
+    expect((document.querySelector(`[data-panel-for="${id}"]`) as HTMLElement).classList.contains('selectable')).toBe(true);
+  }
+  fireEvent.click(inPlayer('p1').getByRole('button', { name: /You, life/ }));
+  expect(sent).toEqual([{ type: 'action', action: 'selectPlayer', id: 'p1' }]);
 });

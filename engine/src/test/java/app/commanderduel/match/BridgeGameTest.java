@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -82,40 +83,93 @@ class BridgeGameTest {
         assertFalse(client.ofType("state").isEmpty());
     }
 
-    /** Each priority prompt is preceded by the state it belongs to: its "Stack:" text matches that state's stack. */
+    /**
+     * Every prompt, request and selection is stamped with the seq of the state sent just before it, and that
+     * state is the nearest preceding state/prompt/request/selection message (so it was flushed for it).
+     */
     @Test
-    void statePrecedesEveryPriorityPrompt() throws Exception {
+    void stateImmediatelyPrecedesEveryPromptRequestAndSelection() throws Exception {
         start(1);
         assertTrue(client.await(c -> c.latestTurn() >= 4, 120_000), "reached turn 4");
-        int checked = 0;
-        JsonObject lastState = null;
         List<JsonObject> all;
         synchronized (client.messages) {
             all = new ArrayList<>(client.messages);
         }
+        JsonObject prev = null; // nearest preceding state/prompt/request/selection
+        int checked = 0;
+        for (JsonObject m : all) {
+            String type = m.get("type").getAsString();
+            boolean decision = type.equals("prompt") || type.equals("request") || type.equals("selection");
+            if (decision) {
+                assertTrue(m.has("stateSeq"), type + " carries stateSeq");
+                if (m.get("stateSeq").getAsLong() > 0) {
+                    assertTrue(prev != null && prev.get("type").getAsString().equals("state"),
+                            type + " must directly follow a state, but follows " + (prev == null ? "nothing" : prev));
+                    assertEquals(prev.get("seq").getAsLong(), m.get("stateSeq").getAsLong(), type + " stateSeq");
+                    checked++;
+                }
+            }
+            if (decision || type.equals("state")) {
+                prev = m;
+            }
+        }
+        assertTrue(checked > 10, "checked " + checked);
+        long last = 0;
+        for (JsonObject m : all) {
+            if (m.get("type").getAsString().equals("state")) {
+                long seq = m.get("seq").getAsLong();
+                assertTrue(seq > last, "state seq increases");
+                last = seq;
+            }
+        }
+    }
+
+    /** With 3+ players the toss winner picks the starting portrait before the mulligan; the board needs a state for that. */
+    @Test
+    void threeBotGameReachesFirstPriorityAfterPortraitPick() throws Exception {
+        start(3);
+        assertTrue(client.await(c -> c.first("prompt", m -> m.get("inputKind").getAsString().equals("priority")) != null, 120_000),
+                "reached a priority prompt");
+        assertTrue(client.rejections.isEmpty(), "rejections: " + client.rejections);
+        List<JsonObject> all;
+        synchronized (client.messages) {
+            all = new ArrayList<>(client.messages);
+        }
+        // Any selection offering players arrived after a state with all four players, so the UI had panels to click.
+        JsonObject lastState = null;
         for (JsonObject m : all) {
             String type = m.get("type").getAsString();
             if (type.equals("state")) {
-                lastState = m.getAsJsonObject("state");
-            } else if (type.equals("prompt") && m.get("inputKind").getAsString().equals("priority")) {
-                String text = m.get("message").getAsString();
-                if (!text.contains("Stack:") || lastState == null) {
-                    continue;
+                lastState = m;
+            } else if (type.equals("selection")) {
+                boolean players = false;
+                for (JsonElement e : m.getAsJsonArray("selectable")) {
+                    players |= e.getAsString().startsWith("p");
                 }
-                boolean emptyText = text.contains("Stack: Empty");
-                boolean emptyState = lastState.getAsJsonArray("stack").isEmpty();
-                assertEquals(emptyText, emptyState, "stack of the last state vs prompt: " + text);
-                checked++;
+                if (players) {
+                    assertTrue(lastState != null, "state before a player selection");
+                    assertEquals(4, lastState.getAsJsonObject("state").getAsJsonArray("players").size());
+                }
             }
         }
-        assertTrue(checked > 0, "some priority prompts mention the stack");
     }
 
     @Test
     void threeBotPodStarts() throws Exception {
         start(3);
         assertTrue(client.await(c -> !c.ofType("state").isEmpty(), 60_000));
-        JsonObject state = client.ofType("state").get(0).getAsJsonObject("state");
+        // States now flow from game creation (before commanders are dealt): all four players are there from the first.
+        assertEquals(4, client.ofType("state").get(0).getAsJsonObject("state").getAsJsonArray("players").size());
+        Predicate<JsonObject> dealt = st -> {
+            for (JsonElement e : st.getAsJsonObject("state").getAsJsonArray("players")) {
+                if (e.getAsJsonObject().getAsJsonArray("command").isEmpty()) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        assertTrue(client.await(c -> c.ofType("state").stream().anyMatch(dealt), 60_000), "commanders dealt");
+        JsonObject state = client.ofType("state").stream().filter(dealt).findFirst().get().getAsJsonObject("state");
         assertEquals(4, state.getAsJsonArray("players").size());
         for (JsonElement p : state.getAsJsonArray("players")) {
             JsonObject player = p.getAsJsonObject();

@@ -90,12 +90,14 @@ export interface ImportResultMsg {
   unknownCards: string[];
   problems: string[];
 }
-export interface StateMsg { type: 'state'; state: GameState }
+/** `seq` numbers states; prompt/selection/request carry the `stateSeq` of the state sent just before them. */
+export interface StateMsg { type: 'state'; seq: number; state: GameState }
 
 export type InputKind = 'priority' | 'mulligan' | 'attack' | 'block' | 'payMana' | 'target' | 'select' | 'other' | 'wait';
 export interface PromptButton { label: string; enabled: boolean }
 export interface PromptMsg {
   type: 'prompt';
+  stateSeq: number;
   message: string;
   inputKind: InputKind;
   ok: PromptButton | null;
@@ -104,6 +106,7 @@ export interface PromptMsg {
 
 export interface SelectionMsg {
   type: 'selection';
+  stateSeq: number;
   selectable: string[];
   chosen: string[];
   min: number;
@@ -118,6 +121,7 @@ export interface RequestOption { id: string; label: string; cardId: string | nul
 export interface AmountTarget { id: string; playerId?: string; cardId?: string; label: string; max: number }
 export interface RequestMsg {
   type: 'request';
+  stateSeq: number;
   requestId: string;
   kind: RequestKind;
   title: string;

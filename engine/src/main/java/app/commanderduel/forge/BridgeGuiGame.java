@@ -13,7 +13,6 @@ import forge.deck.CardPool;
 import forge.game.Game;
 import forge.game.GameEntityView;
 import forge.game.GameOutcome;
-import forge.game.GameStage;
 import forge.game.GameView;
 import forge.game.card.CardView;
 import forge.game.card.CounterEnumType;
@@ -99,6 +98,8 @@ public class BridgeGuiGame extends NetworkGuiGame {
     private final AtomicBoolean stateScheduled = new AtomicBoolean();
     /** Serializes snapshot-and-send so states reach the client in the order they were taken. */
     private final Object stateLock = new Object();
+    /** Seq of the last state actually sent; guarded by stateLock. */
+    private long lastStateSeq;
     private final AtomicInteger stateFailures = new AtomicInteger();
     private final AtomicBoolean gameOverSent = new AtomicBoolean();
     private volatile boolean gameEnded;
@@ -348,17 +349,33 @@ public class BridgeGuiGame extends NetworkGuiGame {
         Object type = msg.get("type");
         if ("prompt".equals(type) || "request".equals(type) || "selection".equals(type)) {
             // The client decides from the pair (state, prompt): the matching snapshot must arrive first,
-            // not up to a debounce interval later.
-            try {
-                sendState();
-            } catch (RuntimeException e) {
-                scheduleState(); // never let a failed snapshot swallow the prompt itself
+            // not up to a debounce interval later. The message carries the seq of the state before it, so the
+            // client can tell a matching pair from a stale one. Held under stateLock so no other state interleaves.
+            synchronized (stateLock) {
+                try {
+                    sendStateLocked();
+                } catch (RuntimeException e) {
+                    logFlushFailure(e);
+                    scheduleState(); // never let a failed snapshot swallow the prompt itself
+                }
+                msg.put("stateSeq", lastStateSeq);
+                send0(msg);
             }
+            return;
         }
+        send0(msg);
+    }
+
+    private void send0(Map<String, Object> msg) {
         String json = Json.GSON.toJson(msg);
         synchronized (out) {
             out.send(json);
         }
+    }
+
+    private static void logFlushFailure(Throwable e) {
+        System.err.println("bridge: state snapshot failed: " + e);
+        e.printStackTrace();
     }
 
     private static Map<String, Object> msg(String type) {
@@ -378,7 +395,12 @@ public class BridgeGuiGame extends NetworkGuiGame {
 
     private void scheduleState() {
         if (stateScheduled.compareAndSet(false, true)) {
-            scheduler.schedule(this::sendState, STATE_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
+            // A flush that ran in between already sent this state and cleared the flag: skip the duplicate.
+            scheduler.schedule(() -> {
+                if (stateScheduled.get()) {
+                    sendState();
+                }
+            }, STATE_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -395,16 +417,12 @@ public class BridgeGuiGame extends NetworkGuiGame {
         if (game == null || viewer == null) {
             return;
         }
-        Game host = game.getGame();
-        if (host != null && host.getAge() == GameStage.BeforeMulligan) {
-            scheduleState(); // zones and commanders are not dealt yet
-            return;
-        }
         Map<String, Object> m = msg("state");
         try {
             m.put("state", StateMapper.map(game, viewer));
         } catch (RuntimeException e) {
             // The game thread mutates the views while we read them; take another snapshot shortly.
+            logFlushFailure(e);
             if (stateFailures.incrementAndGet() <= MAX_STATE_RETRIES) {
                 scheduleState();
             } else {
@@ -414,7 +432,8 @@ public class BridgeGuiGame extends NetworkGuiGame {
             return;
         }
         stateFailures.set(0);
-        send(m);
+        m.put("seq", ++lastStateSeq);
+        send0(m);
     }
 
     private void sendError(String message) {

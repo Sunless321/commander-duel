@@ -23,6 +23,7 @@ afterEach(() => {
 
 const req = (over: Partial<RequestMsg>): RequestMsg => ({
   type: 'request',
+  stateSeq: 1,
   requestId: 'r1',
   kind: 'choose',
   title: 'Choose',

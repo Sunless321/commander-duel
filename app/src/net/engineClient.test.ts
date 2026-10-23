@@ -109,14 +109,14 @@ describe('EngineClient close codes', () => {
 
 describe('store', () => {
   test('parses state message into store', () => {
-    useStore.getState().handle({ type: 'state', state: fixture });
+    useStore.getState().handle({ type: 'state', seq: 1, state: fixture });
     expect(useStore.getState().game?.turn).toBe(fixture.turn);
     expect(useStore.getState().screen).toBe('board');
   });
 
   test('requests are queued FIFO and kept before the first state', () => {
     const req = (id: string) => ({
-      type: 'request' as const, requestId: id, kind: 'choose' as const, title: '', message: '',
+      type: 'request' as const, stateSeq: 1, requestId: id, kind: 'choose' as const, title: '', message: '',
       options: [], min: 1, max: 1, extras: {},
     });
     useStore.getState().handle(req('r1'));
@@ -126,7 +126,7 @@ describe('store', () => {
   });
 
   test('engineStopped sets the engine-stopped screen and clears game state', () => {
-    useStore.getState().handle({ type: 'state', state: fixture });
+    useStore.getState().handle({ type: 'state', seq: 1, state: fixture });
     useStore.getState().handle({ type: 'playable', cardIds: ['c1'] });
     useStore.getState().handle({ type: 'engineStopped' });
     expect(useStore.getState().game).toBeNull();
