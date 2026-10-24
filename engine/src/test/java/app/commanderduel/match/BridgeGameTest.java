@@ -279,6 +279,57 @@ class BridgeGameTest {
      */
     @Test
     void fetchlandSearchListsTheLibraryCardsItOffers() throws Exception {
+        fetchlandSearch();
+    }
+
+    /** In a 4-player pod, clicking an opponent's panel while declaring attackers sends the attack at that player. */
+    @Test
+    void attackTheChosenOpponentInAThreeBotPod() throws Exception {
+        start(3, (state, prompt) -> "priority".equals(str(prompt, "inputKind"))
+                && str(state, "youId").equals(str(state, "activePlayerId"))
+                && "MAIN1".equals(str(state, "phase"))
+                && state.getAsJsonArray("stack").isEmpty());
+        assertTrue(client.await(c -> c.pausedAt != null, 120_000), "paused at priority in your main phase");
+        JsonObject state0 = client.ofType("state").get(client.ofType("state").size() - 1).getAsJsonObject("state");
+        String youId = str(state0, "youId");
+        Player you = match.getGame().getPlayers().stream().filter(p -> ("p" + p.getId()).equals(youId)).findFirst().orElseThrow();
+        Card bear = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Grizzly Bears"), you);
+        bear.setSickness(false);
+        you.getZone(ZoneType.Battlefield).add(bear);
+        String bearId = "c" + bear.getId();
+        List<String> opponents = new ArrayList<>();
+        for (JsonElement p : state0.getAsJsonArray("players")) {
+            if (!p.getAsJsonObject().get("you").getAsBoolean()) {
+                opponents.add(str(p.getAsJsonObject(), "id"));
+            }
+        }
+        assertEquals(3, opponents.size());
+
+        client.pausedAt = null;
+        client.pauseOn = (state, prompt) -> "attack".equals(str(prompt, "inputKind"));
+        client.autoPlay = true;
+        gui.onAction("ok", null, null); // pass priority in main 1 -> declare attackers
+        assertTrue(client.await(c -> c.pausedAt != null, 60_000), "asked to declare attackers");
+
+        String target = opponents.get(1); // not the default (first) defender
+        gui.onAction("selectPlayer", target, null);
+        gui.onAction("selectCard", bearId, null);
+        Predicate<JsonObject> attacking = st -> {
+            for (JsonElement a : st.getAsJsonObject("state").getAsJsonArray("combat")) {
+                JsonObject atk = a.getAsJsonObject();
+                if (bearId.equals(str(atk, "attackerId"))) {
+                    return target.equals(str(atk, "defenderId"));
+                }
+            }
+            return false;
+        };
+        assertTrue(client.await(c -> c.ofType("state").stream().anyMatch(attacking), 30_000),
+                "the bear attacks " + target + "; combat: " + client.ofType("state").get(client.ofType("state").size() - 1)
+                        .getAsJsonObject("state").get("combat"));
+        assertTrue(client.rejections.isEmpty(), "rejections: " + client.rejections);
+    }
+
+    private void fetchlandSearch() throws Exception {
         start(1, (state, prompt) -> "priority".equals(str(prompt, "inputKind"))
                 && str(state, "youId").equals(str(state, "activePlayerId"))
                 && "MAIN1".equals(str(state, "phase"))
