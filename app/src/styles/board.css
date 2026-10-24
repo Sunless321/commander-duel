@@ -37,12 +37,20 @@
 .opponents { display: grid; gap: 16px; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); flex: 0 0 auto; max-height: 36vh; }
 .opponents.n2 { --cols: 2; }
 .opponents.n3 { --cols: 3; }
-.opp-strip { display: flex; gap: 12px; min-width: 0; }
+/* The strip's max-height bounds the field, which scrolls; without it a big board spills over the table. */
+.opp-strip { display: flex; gap: 12px; min-width: 0; min-height: 0; max-height: 36vh; }
 .opp-field {
-  flex-grow: 1; min-width: 0; display: flex; gap: 8px; background: var(--field); border: 1px solid #1f2b45;
-  border-radius: 12px; padding: 8px 12px; box-sizing: border-box; overflow: auto;
+  flex-grow: 1; min-width: 0; min-height: 0; display: flex; gap: 8px; background: var(--field); border: 1px solid #1f2b45;
+  border-radius: 12px; padding: 8px 12px; box-sizing: border-box; overflow-x: hidden; overflow-y: auto;
 }
+.opp-field .battlefield { flex: 1 1 0; }
+.opp-field .field-row { gap: 6px; }
+.opp-field .slot, .opp-field .card.field { width: 52px; height: 73px; }
+.opp-field .battlefield .slot.tapped { width: 73px; }
 .command-mini { display: flex; gap: 6px; padding-right: 8px; border-right: 1px dashed #5b4a8a; }
+/* Three opponents: commander above the permanents so the field keeps its width. */
+.opponents.n3 .opp-field { flex-direction: column; padding: 6px 8px; }
+.opponents.n3 .command-mini { border-right: none; border-bottom: 1px dashed #5b4a8a; padding: 0 0 6px; }
 .opp-hand { display: flex; padding-left: 8px; margin-top: 2px; }
 .opp-hand .card { width: 16px; height: 22px; margin-left: -8px; border-radius: 2px; cursor: default; }
 .opp-hand .card.card-back { box-shadow: inset 0 0 0 1px #d4a64a; }
@@ -53,7 +61,7 @@
   border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
   transition: box-shadow 200ms ease;
 }
-.opponents.n3 .player-panel { width: 160px; }
+.opponents.n3 .player-panel { width: 136px; }
 .player-panel.active { border-color: var(--gold); }
 .player-panel.selectable { box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(212, 166, 74, 0.45); }
 .player-panel.chosen { box-shadow: 0 0 0 3px #fff; }
