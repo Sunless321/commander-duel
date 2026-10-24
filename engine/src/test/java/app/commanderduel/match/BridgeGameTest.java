@@ -11,18 +11,25 @@ import app.commanderduel.forge.BridgeGuiGame;
 import app.commanderduel.forge.ForgeBootstrap;
 import app.commanderduel.match.MatchStarter.BotSpec;
 import app.commanderduel.protocol.PendingRequests;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+import forge.StaticData;
 import forge.deck.Deck;
 import forge.game.Game;
 import forge.game.GameEndReason;
+import forge.game.card.Card;
+import forge.game.player.Player;
 import forge.game.player.PlayerView;
+import forge.game.zone.ZoneType;
 import forge.gamemodes.match.HostedMatch;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -65,7 +72,12 @@ class BridgeGameTest {
     }
 
     private void start(int botCount) {
+        start(botCount, null);
+    }
+
+    private void start(int botCount, BiPredicate<JsonObject, JsonObject> pauseOn) {
         client = new ScriptedClient();
+        client.pauseOn = pauseOn;
         gui = new BridgeGuiGame(client, new PendingRequests());
         client.attach(gui);
         List<BotSpec> bots = new ArrayList<>();
@@ -228,6 +240,116 @@ class BridgeGameTest {
         for (JsonElement id : playable.getAsJsonArray("cardIds")) {
             assertTrue(id.getAsString().startsWith("c"), "card ids are prefixed: " + id);
         }
+    }
+
+    private static String str(JsonObject o, String key) {
+        JsonElement e = o.get(key);
+        return e == null || e.isJsonNull() ? null : e.getAsString();
+    }
+
+    private static JsonObject yourPlayer(JsonObject state) {
+        for (JsonElement p : state.getAsJsonArray("players")) {
+            if (p.getAsJsonObject().get("you").getAsBoolean()) {
+                return p.getAsJsonObject();
+            }
+        }
+        throw new AssertionError("no you in state");
+    }
+
+    /** No library card and no opponent's hand card is in the snapshot (nothing lets you look at them). */
+    private static void assertNoHiddenCards(JsonObject state) {
+        String you = str(state, "youId");
+        for (var e : state.getAsJsonObject("cards").entrySet()) {
+            JsonObject c = e.getValue().getAsJsonObject();
+            String zone = str(c, "zone");
+            assertFalse("Library".equals(zone), "library card listed: " + e.getKey() + " " + str(c, "name"));
+            assertFalse("Hand".equals(zone) && !you.equals(str(c, "controllerId")),
+                    "opponent hand card listed: " + e.getKey() + " " + str(c, "name"));
+        }
+        for (JsonElement p : state.getAsJsonArray("players")) {
+            assertTrue(p.getAsJsonObject().getAsJsonArray("visibleLibrary").isEmpty(), "visibleLibrary");
+            assertTrue(p.getAsJsonObject().getAsJsonArray("visibleHand").isEmpty(), "visibleHand");
+        }
+    }
+
+    /**
+     * Cracking a fetchland asks through a board-click selection over library cards (UI_SELECT_FROM_CARD_DISPLAYS).
+     * Those cards must be in the state sent just before the selection (Forge temp-shows them to the searcher),
+     * listed in your visibleLibrary; picking one puts it onto your battlefield. Before and after, the library is hidden.
+     */
+    @Test
+    void fetchlandSearchListsTheLibraryCardsItOffers() throws Exception {
+        start(1, (state, prompt) -> "priority".equals(str(prompt, "inputKind"))
+                && str(state, "youId").equals(str(state, "activePlayerId"))
+                && "MAIN1".equals(str(state, "phase"))
+                && state.getAsJsonArray("stack").isEmpty());
+        assertTrue(client.await(c -> c.pausedAt != null, 120_000), "paused at priority in your main phase");
+        List<JsonObject> states = client.ofType("state"); // checked for hidden cards at the end
+
+        Game game = match.getGame();
+        String youId = str(states.get(states.size() - 1).getAsJsonObject("state"), "youId");
+        Player you = game.getPlayers().stream().filter(p -> ("p" + p.getId()).equals(youId)).findFirst().orElseThrow();
+        // The game thread is parked on the priority Input while the board is set up.
+        Card forest = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Forest"), you);
+        Card swamp = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Swamp"), you);
+        Card fetch = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Verdant Catacombs"), you);
+        you.getZone(ZoneType.Library).add(forest);
+        you.getZone(ZoneType.Library).add(swamp);
+        you.getZone(ZoneType.Battlefield).add(fetch);
+        String forestId = "c" + forest.getId();
+        String swampId = "c" + swamp.getId();
+
+        int mark = client.messages.size();
+        client.autoPlay = true; // answers the cost prompts, passes priority, then picks the first offered card + OK
+        gui.onAction("selectCard", "c" + fetch.getId(), null);
+        Predicate<JsonObject> search = m -> m.get("type").getAsString().equals("selection")
+                && m.getAsJsonArray("selectable").contains(new JsonPrimitive(forestId));
+        assertTrue(client.await(c -> {
+            synchronized (c.messages) {
+                return c.messages.subList(mark, c.messages.size()).stream().anyMatch(search);
+            }
+        }, 60_000), "a selection offering the Forest in your library");
+
+        List<JsonObject> all;
+        synchronized (client.messages) {
+            all = new ArrayList<>(client.messages);
+        }
+        int at = mark;
+        while (!search.test(all.get(at))) {
+            at++;
+        }
+        JsonObject selection = all.get(at);
+        JsonObject before = null;
+        for (int i = at - 1; i >= 0 && before == null; i--) {
+            if (all.get(i).get("type").getAsString().equals("state")) {
+                before = all.get(i);
+            }
+        }
+        assertNotNull(before, "a state before the selection");
+        assertEquals(before.get("seq").getAsLong(), selection.get("stateSeq").getAsLong());
+        JsonObject state = before.getAsJsonObject("state");
+        JsonObject cards = state.getAsJsonObject("cards");
+        JsonArray visibleLibrary = yourPlayer(state).getAsJsonArray("visibleLibrary");
+        assertTrue(selection.getAsJsonArray("selectable").contains(new JsonPrimitive(swampId)), "the Swamp is offered too");
+        for (JsonElement e : selection.getAsJsonArray("selectable")) {
+            String id = e.getAsString();
+            assertTrue(cards.has(id), "offered card " + id + " is in the state");
+            assertNotNull(str(cards.getAsJsonObject(id), "name"), "offered card " + id + " has a name");
+            assertTrue(visibleLibrary.contains(e), "offered card " + id + " is in your visibleLibrary");
+        }
+        assertEquals("Forest", str(cards.getAsJsonObject(forestId), "name"));
+
+        String picked = selection.getAsJsonArray("selectable").get(0).getAsString();
+        Predicate<JsonObject> landed = st -> yourPlayer(st.getAsJsonObject("state"))
+                .getAsJsonArray("battlefield").contains(new JsonPrimitive(picked));
+        assertTrue(client.await(c -> c.ofType("state").stream().anyMatch(landed), 60_000),
+                "the picked land " + picked + " is on your battlefield");
+        JsonObject after = client.ofType("state").stream().filter(landed).findFirst().get().getAsJsonObject("state");
+        assertNoHiddenCards(after);
+        for (JsonObject st : states) {
+            assertNoHiddenCards(st.getAsJsonObject("state"));
+        }
+        assertTrue(client.rejections.isEmpty(), "rejections: " + client.rejections);
     }
 
     @Test

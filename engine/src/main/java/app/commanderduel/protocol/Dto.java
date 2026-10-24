@@ -32,7 +32,11 @@ public final class Dto {
             List<String> graveyard,
             List<String> exile,
             List<String> command,
-            List<String> battlefield) {}
+            List<String> battlefield,
+            // Library cards Forge lets the viewer look at right now (e.g. while searching); usually empty.
+            List<String> visibleLibrary,
+            // Another player's hand cards Forge lets the viewer look at right now; always empty for the viewer.
+            List<String> visibleHand) {}
 
     public record CardDto(
             String id,

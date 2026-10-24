@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 /**
@@ -38,6 +39,12 @@ final class ScriptedClient implements Transport {
     volatile String bogusRequestId;
     /** When false, the client records messages but never acts. */
     volatile boolean autoPlay = true;
+    /**
+     * When set, the first prompt matching it (tested with the latest state's {@code state} object) is not acted on:
+     * autoPlay is switched off and the prompt kept in {@link #pausedAt}, so a test can take over at that point.
+     */
+    volatile BiPredicate<JsonObject, JsonObject> pauseOn;
+    volatile JsonObject pausedAt;
     private volatile JsonObject lastPrompt;
     private volatile JsonObject lastSelection;
 
@@ -55,6 +62,17 @@ final class ScriptedClient implements Transport {
         }
         if (!autoPlay) {
             return;
+        }
+        BiPredicate<JsonObject, JsonObject> pause = pauseOn;
+        if (type.equals("prompt") && pause != null) {
+            List<JsonObject> states = ofType("state");
+            JsonObject state = states.isEmpty() ? null : states.get(states.size() - 1).getAsJsonObject("state");
+            if (state != null && pause.test(state, msg)) {
+                autoPlay = false;
+                pauseOn = null;
+                pausedAt = msg;
+                return;
+            }
         }
         switch (type) {
             case "request" -> worker.execute(() -> answer(msg));

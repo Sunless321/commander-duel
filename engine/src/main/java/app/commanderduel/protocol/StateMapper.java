@@ -29,7 +29,8 @@ import java.util.Map;
 
 /**
  * Builds the per-viewer JSON snapshot from Forge's GameView. Hidden information (other players'
- * hands, all libraries, cards the viewer may not see) is reduced to counts or {@code hidden} stubs.
+ * hands, all libraries, cards the viewer may not see) is reduced to counts or {@code hidden} stubs; a
+ * hand or library card is listed only while Forge's CardView visibility check lets the viewer see it.
  * Ids: players "p&lt;n&gt;", cards "c&lt;n&gt;", stack items "s&lt;n&gt;" (Forge's raw ids overlap between kinds).
  */
 public final class StateMapper {
@@ -46,8 +47,10 @@ public final class StateMapper {
             if (p.getHasPriority()) {
                 priority = pid(p);
             }
-            // Hand: only the viewer's own cards are ever listed. Library: never.
+            // Hand: the viewer's own cards are listed. Libraries and other hands: only the cards Forge lets the
+            // viewer look at right now (e.g. temp-shown while searching or revealed by a discard spell).
             List<String> hand = you ? zone(p.getHand(), viewer, cards) : List.of();
+            List<String> visibleHand = you ? List.of() : visibleOnly(p.getHand(), viewer, cards);
             players.add(new PlayerDto(
                     pid(p),
                     p.getName(),
@@ -62,7 +65,9 @@ public final class StateMapper {
                     zone(p.getGraveyard(), viewer, cards),
                     zone(p.getExile(), viewer, cards),
                     zone(p.getCommand(), viewer, cards),
-                    zone(p.getBattlefield(), viewer, cards)));
+                    zone(p.getBattlefield(), viewer, cards),
+                    visibleOnly(p.getLibrary(), viewer, cards),
+                    visibleHand));
         }
 
         List<StackItemDto> stack = new ArrayList<>();
@@ -134,6 +139,20 @@ public final class StateMapper {
         List<String> ids = new ArrayList<>();
         for (CardView cv : views) {
             ids.add(register(cv, viewer, cards));
+        }
+        return ids;
+    }
+
+    /** Registers only the cards of a hidden zone that pass Forge's own per-viewer visibility check. */
+    private static List<String> visibleOnly(Iterable<CardView> views, PlayerView viewer, Map<String, CardDto> cards) {
+        List<String> ids = new ArrayList<>();
+        if (views == null) {
+            return ids;
+        }
+        for (CardView cv : views) {
+            if (visible(cv, viewer)) {
+                ids.add(register(cv, viewer, cards));
+            }
         }
         return ids;
     }

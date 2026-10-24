@@ -97,6 +97,7 @@ class StateMapperTest {
         GameState s = map();
         PlayerDto o = dto(s, false);
         assertTrue(o.hand().isEmpty());
+        assertTrue(o.visibleHand().isEmpty());
         assertEquals(7, o.handCount());
         for (Card c : opp.getCardsIn(ZoneType.Hand)) {
             assertFalse(s.cards().containsKey("c" + c.getId()));
@@ -118,11 +119,60 @@ class StateMapperTest {
         GameState s = map();
         assertEquals(99 - 7, dto(s, true).libraryCount());
         assertEquals(99 - 7, dto(s, false).libraryCount());
+        assertTrue(dto(s, true).visibleLibrary().isEmpty());
+        assertTrue(dto(s, false).visibleLibrary().isEmpty());
         for (Player p : game.getPlayers()) {
             for (Card c : p.getCardsIn(ZoneType.Library)) {
                 assertFalse(s.cards().containsKey("c" + c.getId()));
             }
         }
+    }
+
+    /** A library card Forge lets the viewer look at right now (e.g. tempShow during a search) is listed. */
+    @Test
+    void libraryCardTheViewerMayLookAtIsListed() {
+        Card shown = me.getCardsIn(ZoneType.Library).get(3);
+        Card other = me.getCardsIn(ZoneType.Library).get(4);
+        shown.addMayLookTemp(me);
+        GameState s = map();
+        PlayerDto m = dto(s, true);
+        String id = "c" + shown.getId();
+        assertEquals(List.of(id), m.visibleLibrary());
+        assertEquals(shown.getName(), s.cards().get(id).name());
+        assertEquals("Library", s.cards().get(id).zone());
+        assertFalse(s.cards().containsKey("c" + other.getId()));
+        assertEquals(99 - 7, m.libraryCount());
+        shown.removeMayLookTemp(me);
+        GameState after = map();
+        assertTrue(dto(after, true).visibleLibrary().isEmpty());
+        assertFalse(after.cards().containsKey(id));
+    }
+
+    /** An opponent's hand card is listed only while Forge lets the viewer look at it (Duress-style reveal). */
+    @Test
+    void revealedOpponentHandCardIsListed() {
+        Card shown = opp.getCardsIn(ZoneType.Hand).get(0);
+        Card other = opp.getCardsIn(ZoneType.Hand).get(1);
+        shown.addMayLookTemp(me);
+        GameState s = map();
+        PlayerDto o = dto(s, false);
+        String id = "c" + shown.getId();
+        assertEquals(List.of(id), o.visibleHand());
+        assertTrue(o.hand().isEmpty());
+        assertEquals(7, o.handCount());
+        assertEquals(shown.getName(), s.cards().get(id).name());
+        assertFalse(s.cards().containsKey("c" + other.getId()));
+        assertTrue(dto(s, true).visibleHand().isEmpty(), "own hand is in hand, not visibleHand");
+    }
+
+    /** Another player looking at a card does not let the viewer see it. */
+    @Test
+    void cardShownToSomeoneElseStaysHidden() {
+        Card c = opp.getCardsIn(ZoneType.Library).get(0);
+        c.addMayLookTemp(opp);
+        GameState s = map();
+        assertTrue(dto(s, false).visibleLibrary().isEmpty());
+        assertFalse(s.cards().containsKey("c" + c.getId()));
     }
 
     @Test
