@@ -26,7 +26,7 @@
 .board .slot { animation: slot-in 200ms ease; }
 @keyframes slot-in { from { transform: translateY(-10px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-.board-main { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.board-main { position: relative; flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .board-side { width: 220px; flex: none; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .shuffling {
   flex-grow: 1; display: flex; align-items: center; justify-content: center;
@@ -74,6 +74,15 @@
 .zone-grid .slot { width: 74px; height: 104px; }
 .elsewhere { background: var(--panel); border: 1px solid var(--glow); border-radius: 12px; padding: 10px; }
 .elsewhere .slot { width: 74px; height: 104px; }
+/* "Choose from": overlays the table only (never the side column), so the prompt bar stays clickable. */
+.choose-from {
+  position: absolute; z-index: 5; left: 50%; top: 12%; transform: translateX(-50%); width: min(720px, 94%); max-height: 76%;
+  overflow: auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 16px 18px;
+  background: var(--panel); border: 1px solid var(--gold); border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.choose-from-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.choose-from-group { display: flex; flex-direction: column; gap: 6px; }
+.choose-from-show { position: absolute; z-index: 5; top: 12px; left: 50%; transform: translateX(-50%); border-color: var(--gold); }
 .concede { min-height: 32px; font-size: 12px; color: var(--muted); }
 .concede-confirm { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
 .concede-confirm .btn { min-height: 32px; }

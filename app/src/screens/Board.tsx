@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Battlefield, FieldCard, type CardFlags } from '../components/Battlefield';
 import { Card } from '../components/Card';
+import { ChooseFrom, offBoardChoices } from '../components/ChooseFrom';
 import { ConcedeButton } from '../components/ConcedeButton';
 import { ElsewhereStrip, unrenderedOffers } from '../components/ElsewhereStrip';
 import { Hand } from '../components/Hand';
@@ -47,10 +48,14 @@ export function Board() {
     };
   }, [game, selection, playable]);
 
-  const elsewhere = useMemo(
-    () => (game ? unrenderedOffers(game, [...playable, ...(selection?.selectable ?? [])]) : []),
-    [game, playable, selection],
-  );
+  // Selectable cards no zone draws (a searched library, a revealed hand) get the "Choose from" panel;
+  // the strip keeps whatever else the engine offers off the board.
+  const choices = useMemo(() => (game ? offBoardChoices(game, selection?.selectable ?? []) : []), [game, selection]);
+  const elsewhere = useMemo(() => {
+    if (!game) return [];
+    const inChoices = new Set(choices.flatMap((g) => g.ids));
+    return unrenderedOffers(game, playable).filter((id) => !inChoices.has(id));
+  }, [game, playable, choices]);
 
   const ok = () => client.send({ type: 'action', action: 'ok' });
   const cancel = () => client.send({ type: 'action', action: 'cancel' });
@@ -63,6 +68,9 @@ export function Board() {
           <Table game={game} flags={flags} onZone={(playerId, zone) => setOpenZone({ playerId, zone })} />
         ) : (
           <div className="shuffling">Shuffling up…</div>
+        )}
+        {game && flags && (
+          <ChooseFrom key={choices.flatMap((g) => g.ids).join(',')} groups={choices} game={game} flags={flags} />
         )}
       </div>
       <aside className="board-side">

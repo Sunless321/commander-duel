@@ -30,7 +30,7 @@ const card = (id: string, ownerId: string, zone: string, over: Partial<CardDto> 
 
 const player = (id: string, name: string, you: boolean, over: Partial<PlayerDto> = {}): PlayerDto => ({
   id, name, you, life: 40, poison: 0, commanderDamage: {}, manaPool: {}, hand: [], handCount: 0, libraryCount: 92,
-  graveyard: [], exile: [], command: [], battlefield: [], ...over,
+  graveyard: [], exile: [], command: [], battlefield: [], visibleLibrary: [], visibleHand: [], ...over,
 });
 
 function game(): GameState {
@@ -172,6 +172,70 @@ test('an offered card in no rendered zone appears in the Playable elsewhere stri
   expect(within(strip).queryByRole('button', { name: 'Card c1' })).toBeNull();
   fireEvent.click(within(strip).getByRole('button', { name: 'Top Card' }));
   expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c9' }]);
+});
+
+test('a selection over cards only in your visibleLibrary opens "Choose from" and clicks send selectCard', () => {
+  act(() => {
+    useStore.getState().handle({
+      type: 'state', seq: 1,
+      state: stateWith((g) => {
+        g.players[0].visibleLibrary = ['c20', 'c21'];
+        g.cards.c20 = card('c20', 'p1', 'Library', { name: 'Forest' });
+        g.cards.c21 = card('c21', 'p1', 'Library', { name: 'Swamp' });
+      }),
+    });
+    useStore.getState().handle({
+      type: 'prompt', stateSeq: 1, message: 'Search for a Forest or Swamp', inputKind: 'select',
+      ok: { label: 'OK', enabled: false }, cancel: { label: 'Cancel', enabled: true },
+    });
+    useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: ['c20', 'c21'], chosen: [], min: 1, max: 1 });
+  });
+  render(<Board />);
+  const panel = screen.getByRole('region', { name: /Choose from/ });
+  expect(within(panel).queryByText('Your library')).not.toBeNull();
+  const forest = within(panel).getByRole('button', { name: 'Forest' });
+  expect(forest.classList.contains('selectable')).toBe(true);
+  expect(within(panel).getByRole('button', { name: 'Swamp' }).classList.contains('selectable')).toBe(true);
+  // Not duplicated in the safety strip; the prompt's buttons stay reachable.
+  expect(screen.queryByRole('region', { name: 'Playable elsewhere' })).toBeNull();
+  fireEvent.click(forest);
+  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c20' }]);
+
+  act(() => {
+    useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: ['c20', 'c21'], chosen: ['c20'], min: 1, max: 1 });
+    useStore.getState().handle({
+      type: 'prompt', stateSeq: 1, message: 'Search for a Forest or Swamp', inputKind: 'select',
+      ok: { label: 'OK', enabled: true }, cancel: { label: 'Cancel', enabled: true },
+    });
+  });
+  expect(within(screen.getByRole('region', { name: /Choose from/ })).getByRole('button', { name: 'Forest' }).classList.contains('chosen')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+  expect(sent[1]).toEqual({ type: 'action', action: 'ok' });
+
+  // The search ends: the cards leave the state and the panel closes.
+  act(() => {
+    useStore.getState().handle({ type: 'state', seq: 2, state: game() });
+    useStore.getState().handle({ type: 'selection', stateSeq: 2, selectable: [], chosen: [], min: 0, max: 0 });
+  });
+  expect(screen.queryByRole('region', { name: /Choose from/ })).toBeNull();
+});
+
+test("a revealed opponent hand card offered by a selection is grouped under that player's hand", () => {
+  act(() => {
+    useStore.getState().handle({
+      type: 'state', seq: 1,
+      state: stateWith((g) => {
+        g.players[1].visibleHand = ['c30'];
+        g.cards.c30 = card('c30', 'p2', 'Hand', { name: 'Revealed Spell' });
+      }),
+    });
+    useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: ['c30'], chosen: [], min: 1, max: 1 });
+  });
+  render(<Board />);
+  const panel = screen.getByRole('region', { name: /Choose from/ });
+  expect(within(panel).queryByText("Bot 1's hand")).not.toBeNull();
+  fireEvent.click(within(panel).getByRole('button', { name: 'Revealed Spell' }));
+  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c30' }]);
 });
 
 test('concede asks in the page first, then sends concede', () => {

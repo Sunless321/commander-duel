@@ -32,7 +32,7 @@ const card = (id: string, ownerId: string, zone: string, name: string, over: Par
 
 const player = (id: string, name: string, you: boolean, over: Partial<PlayerDto> = {}): PlayerDto => ({
   id, name, you, life: 40, poison: 0, commanderDamage: {}, manaPool: {}, hand: [], handCount: 0, libraryCount: 92,
-  graveyard: [], exile: [], command: [], battlefield: [], ...over,
+  graveyard: [], exile: [], command: [], battlefield: [], visibleLibrary: [], visibleHand: [], ...over,
 });
 
 function game(over: Partial<GameState> = {}): GameState {

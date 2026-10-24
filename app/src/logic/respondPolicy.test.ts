@@ -36,8 +36,8 @@ test('always -> popup even with nothing playable; never -> autoPass even with pl
 test('smart: playable ids that are not respond cards do not count', () => {
   const g = game({
     players: [
-      { id: 'p1', name: 'You', you: true, life: 40, poison: 0, commanderDamage: {}, manaPool: {}, hand: [], handCount: 0, libraryCount: 0, graveyard: [], exile: [], command: [], battlefield: [] },
-      { id: 'p2', name: 'Bot', you: false, life: 40, poison: 0, commanderDamage: {}, manaPool: {}, hand: [], handCount: 0, libraryCount: 0, graveyard: [], exile: [], command: [], battlefield: ['c4'] },
+      { id: 'p1', name: 'You', you: true, life: 40, poison: 0, commanderDamage: {}, manaPool: {}, hand: [], handCount: 0, libraryCount: 0, graveyard: [], exile: [], command: [], battlefield: [], visibleLibrary: [], visibleHand: [] },
+      { id: 'p2', name: 'Bot', you: false, life: 40, poison: 0, commanderDamage: {}, manaPool: {}, hand: [], handCount: 0, libraryCount: 0, graveyard: [], exile: [], command: [], battlefield: ['c4'], visibleLibrary: [], visibleHand: [] },
     ],
     cards: { c4: { id: 'c4' } as never },
   });

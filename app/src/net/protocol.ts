@@ -17,6 +17,10 @@ export interface PlayerDto {
   exile: string[];
   command: string[];
   battlefield: string[];
+  /** Library cards Forge lets you look at right now (e.g. while you search); usually empty. */
+  visibleLibrary: string[];
+  /** This opponent's hand cards Forge lets you look at right now (e.g. a discard spell's reveal); empty for you. */
+  visibleHand: string[];
 }
 
 export interface CardDto {
