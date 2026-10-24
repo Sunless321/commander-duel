@@ -2,10 +2,14 @@ package app.commanderduel.match;
 
 import app.commanderduel.forge.BridgeGuiGame;
 import forge.deck.Deck;
+import forge.game.GameRules;
 import forge.game.GameType;
 import forge.game.player.RegisteredPlayer;
 import forge.gamemodes.match.HostedMatch;
 import forge.gui.GuiBase;
+import forge.localinstance.properties.ForgePreferences;
+import forge.localinstance.properties.ForgePreferences.FPref;
+import forge.model.FModel;
 import forge.player.GamePlayerUtil;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -31,8 +35,24 @@ public final class MatchStarter {
             players.add(rp);
         }
         HostedMatch match = GuiBase.getInterface().hostMatch();
-        match.startMatch(GameType.Commander, EnumSet.of(GameType.Commander), players, human, gui);
+        match.startMatch(rules(), EnumSet.of(GameType.Commander), players, human, gui);
         return match;
+    }
+
+    /** HostedMatch's (private) default Commander rules, minus the "AI can't play these cards well" reveal. */
+    private static GameRules rules() {
+        ForgePreferences prefs = FModel.getPreferences();
+        GameRules rules = new GameRules(GameType.Commander);
+        rules.setPlayForAnte(prefs.getPrefBoolean(FPref.UI_ANTE));
+        rules.setMatchAnteRarity(prefs.getPrefBoolean(FPref.UI_ANTE_MATCH_RARITY));
+        rules.setAnteIncludeBasicLands(prefs.getPrefBoolean(FPref.UI_ANTE_INCLUDE_BASIC_LANDS));
+        rules.setManaBurn(prefs.getPrefBoolean(FPref.LEGACY_MANABURN));
+        rules.setOrderCombatants(prefs.getPrefBoolean(FPref.LEGACY_ORDER_COMBATANTS));
+        rules.setUseGrayText(prefs.getPrefBoolean(FPref.UI_GRAY_INACTIVE_TEXT));
+        rules.setGamesPerMatch(prefs.getPrefInt(FPref.UI_MATCHES_PER_GAME));
+        rules.setAllowCheatShuffle(prefs.getPrefBoolean(FPref.UI_ENABLE_AI_CHEATS));
+        rules.setWarnAboutAICards(false);
+        return rules;
     }
 
     private static String botName(BotSpec bot) {

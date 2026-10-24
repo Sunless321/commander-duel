@@ -203,6 +203,24 @@ class BridgeGameTest {
         }
     }
 
+    /** Forge's "AI can't play these cards well" reveal is noise for a player; the pod starts without it. */
+    @Test
+    void noAiUnplayableCardsNoticeAtStart() throws Exception {
+        // Kaalia of the Vast's precon lists cards the AI flags (Master Warcraft, Cleansing Beam, ...).
+        Deck kaalia = decks.precons().stream().filter(p -> p.commanders().contains("Kaalia of the Vast"))
+                .findFirst().map(p -> decks.loadPrecon(p.id())).orElseThrow();
+        client = new ScriptedClient();
+        gui = new BridgeGuiGame(client, new PendingRequests());
+        client.attach(gui);
+        match = MatchStarter.start(precon(0), List.of(new BotSpec(kaalia, Difficulty.NORMAL, null)), gui);
+        assertTrue(client.await(c -> c.latestTurn() >= 1, 120_000), "the game reached turn 1");
+        List<String> titles = new ArrayList<>();
+        for (JsonObject m : client.ofType("request")) {
+            titles.add(String.valueOf(str(m, "title")));
+        }
+        assertFalse(titles.stream().anyMatch(t -> t.contains("AI can't play")), "requests: " + titles);
+    }
+
     @Test
     void threeBotPodStarts() throws Exception {
         start(3);
