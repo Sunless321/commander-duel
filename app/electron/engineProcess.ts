@@ -24,15 +24,29 @@ export function parseReadyLine(line: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+// A 4-player game retains ~270 MB of heap; without a cap the JVM takes up to 1/4 of RAM and keeps it.
+// G1's periodic GC and a low free ratio hand idle memory back to Windows between games.
+const JVM_FLAGS = [
+  '-Xmx1536m',
+  '-XX:+UseG1GC',
+  '-XX:G1PeriodicGCInterval=15000',
+  '-XX:MinHeapFreeRatio=10',
+  '-XX:MaxHeapFreeRatio=30',
+  '-XX:+UseStringDeduplication',
+];
+
+export function engineArgs(opts: EngineOptions, token: string): string[] {
+  return [...JVM_FLAGS, '-jar', opts.jarPath, '--forge', opts.forgeDir, '--data', opts.dataDir, '--token', token];
+}
+
 /** Spawns the engine jar with a fresh random token; resolves on its READY line. */
 export function startEngine(opts: EngineOptions): Promise<RunningEngine> {
   const token = randomBytes(16).toString('hex');
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      opts.javaPath,
-      ['-jar', opts.jarPath, '--forge', opts.forgeDir, '--data', opts.dataDir, '--token', token],
-      { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
-    );
+    const child = spawn(opts.javaPath, engineArgs(opts, token), {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
     opts.onSpawn?.(child);
     let settled = false;
     const timer = setTimeout(() => {
