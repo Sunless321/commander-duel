@@ -1,0 +1,23 @@
+appId: app.commanderduel
+productName: Commander Duel
+copyright: GPL-3.0-only. Not affiliated with Wizards of the Coast.
+directories:
+  output: dist
+  buildResources: build-resources
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: ../build/jre
+    to: jre
+  - from: ../engine/target/commander-duel-engine.jar
+    to: engine/commander-duel-engine.jar
+  - from: ../build/forge-gui/res
+    to: forge-gui/res
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  artifactName: Commander Duel Setup ${version}.${ext}

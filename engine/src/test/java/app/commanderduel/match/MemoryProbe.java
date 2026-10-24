@@ -18,7 +18,7 @@ public final class MemoryProbe {
         int games = args.length > 0 ? Integer.parseInt(args[0]) : 4;
         int turns = args.length > 1 ? Integer.parseInt(args[1]) : 6;
         Difficulty difficulty = args.length > 2 ? Difficulty.valueOf(args[2]) : Difficulty.NORMAL;
-        ForgeBootstrap.init(Path.of("../forge/forge-gui"), Files.createTempDirectory("cd"));
+        ForgeBootstrap.init(Path.of(System.getProperty("probe.forge", "../forge/forge-gui")), Files.createTempDirectory("cd"));
         DeckStore decks = new DeckStore(Files.createTempDirectory("decks"));
         report("after boot");
         for (int g = 0; g < games; g++) {
