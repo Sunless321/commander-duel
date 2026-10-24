@@ -340,7 +340,9 @@ public class Session {
             reject(null, "no game in progress");
             return;
         }
-        g.onAction(str(msg, "action"), str(msg, "id"), str(msg, "color"));
+        g.onAction(str(msg, "action"), str(msg, "id"), str(msg, "color"),
+                msg.has("promptSeq") && msg.get("promptSeq").isJsonPrimitive() && msg.getAsJsonPrimitive("promptSeq").isNumber()
+                        ? msg.get("promptSeq").getAsLong() : null);
     }
 
     // ---------------------------------------------------------------- output

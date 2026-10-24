@@ -55,7 +55,7 @@ function game(over: Partial<GameState> = {}): GameState {
 }
 
 const prompt = (over: Partial<PromptMsg> = {}): PromptMsg => ({
-  type: 'prompt', stateSeq: 1, message: 'You have priority', inputKind: 'priority',
+  type: 'prompt', stateSeq: 1, promptSeq: 1, message: 'You have priority', inputKind: 'priority',
   ok: { label: 'OK', enabled: true }, cancel: null, ...over,
 });
 
@@ -84,14 +84,14 @@ test('clicking a response card sends selectCard; opponent permanents are not off
   render(<ResponsePopup />);
   expect(screen.queryByRole('button', { name: 'Their Rock' })).toBeNull();
   await userEvent.click(screen.getByRole('button', { name: 'Lightning Bolt' }));
-  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c1' }]);
+  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c1', promptSeq: 1 }]);
 });
 
 test('popup Let it resolve sends ok', async () => {
   setup(game(), ['c1']);
   render(<ResponsePopup />);
   await userEvent.click(screen.getByRole('button', { name: 'Let it resolve' }));
-  expect(sent).toEqual([{ type: 'action', action: 'ok' }]);
+  expect(sent).toEqual([{ type: 'action', action: 'ok', promptSeq: 1 }]);
 });
 
 test('popup closes when the prompt changes', () => {
@@ -132,19 +132,21 @@ test('autoPass sends ok once per stack item', () => {
   setup(game(), []);
   render(<ResponsePopup />);
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(sent).toEqual([{ type: 'action', action: 'ok' }]);
+  expect(sent).toEqual([{ type: 'action', action: 'ok', promptSeq: 1 }]);
   act(() => useStore.setState({ game: game() })); // same state, new object
   expect(sent).toHaveLength(1);
-  // a different stack item gets its own pass
+  // the same prompt with a different stack item is not passed again: a new item comes with a new prompt
   act(() => useStore.setState({ game: game({ stack: [{ id: 's2', text: 'x', sourceCardId: null, activatorId: 'p2', targetIds: [] }] }) }));
-  expect(sent).toHaveLength(2);
+  expect(sent).toHaveLength(1);
+  act(() => useStore.setState({ prompt: prompt({ promptSeq: 2 }) }));
+  expect(sent).toEqual([{ type: 'action', action: 'ok', promptSeq: 1 }, { type: 'action', action: 'ok', promptSeq: 2 }]);
 });
 
 test('smart mode ignores playable ids the popup would not show', () => {
   setup(game(), ['c4']); // only an opponent permanent
   render(<ResponsePopup />);
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(sent).toEqual([{ type: 'action', action: 'ok' }]);
+  expect(sent).toEqual([{ type: 'action', action: 'ok', promptSeq: 1 }]);
 });
 
 test('smart mode explains what it relies on', () => {
@@ -153,8 +155,8 @@ test('smart mode explains what it relies on', () => {
   expect(screen.getByText(/Uses the game's playable-card hints/)).toBeTruthy();
 });
 
-const pr = (stateSeq: number, message: string, inputKind: PromptMsg['inputKind'] = 'priority'): PromptMsg => ({
-  type: 'prompt', stateSeq, message, inputKind, ok: inputKind === 'wait' ? null : { label: 'OK', enabled: true }, cancel: null,
+const pr = (stateSeq: number, message: string, inputKind: PromptMsg['inputKind'] = 'priority', promptSeq = stateSeq): PromptMsg => ({
+  type: 'prompt', stateSeq, promptSeq, message, inputKind, ok: inputKind === 'wait' ? null : { label: 'OK', enabled: true }, cancel: null,
 });
 
 test('a prompt whose stateSeq does not match the applied state is not acted on', () => {
@@ -177,7 +179,7 @@ test('once the matching state arrives the prompt is decided (auto-pass)', () => 
   act(() => h(pr(2, 'B')));
   expect(sent).toEqual([]);
   act(() => h({ type: 'state', seq: 2, state: game() })); // opponent spell, nothing playable
-  expect(sent).toEqual([{ type: 'action', action: 'ok' }]);
+  expect(sent).toEqual([{ type: 'action', action: 'ok', promptSeq: 2 }]);
 });
 
 test('a mismatched pair shows no popup; the matching state shows it', () => {
@@ -204,7 +206,7 @@ test('never mode auto-passes even when you could respond', () => {
   useStore.setState({ respondMode: 'never' });
   setup(game(), ['c1']);
   render(<ResponsePopup />);
-  expect(sent).toEqual([{ type: 'action', action: 'ok' }]);
+  expect(sent).toEqual([{ type: 'action', action: 'ok', promptSeq: 1 }]);
 });
 
 test('a newer state while the same prompt stands keeps the popup (older waits, equal decides, newer decides)', () => {
@@ -222,4 +224,24 @@ test('a newer state while the same prompt stands keeps the popup (older waits, e
   g.players[0].manaPool = { G: 1 };
   act(() => h({ type: 'state', seq: 3, state: g })); // e.g. a mana-pool update after the prompt
   expect(screen.getByRole('dialog')).toBeTruthy(); // newer: still decides
+});
+
+test('a prompt that showed the popup is never auto-passed, even when playable empties (you clicked a response)', () => {
+  setup(game(), ['c1']);
+  render(<ResponsePopup />);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  // Forge clears the playable list as soon as your click stops the priority input
+  act(() => useStore.setState({ playable: new Set() }));
+  expect(sent).toEqual([]);
+});
+
+test('auto-pass needs the state the prompt was stamped with; a newer state means the prompt is about to change', () => {
+  const h = useStore.getState().handle;
+  render(<ResponsePopup />);
+  act(() => {
+    h({ type: 'state', seq: 3, state: game() }); // flushed for the next (not yet arrived) prompt
+    h({ type: 'playable', cardIds: [] });
+  });
+  act(() => useStore.setState({ prompt: pr(2, 'B') }));
+  expect(sent).toEqual([]);
 });

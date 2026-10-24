@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { autoPassKey, decideResponse, respondCards } from '../logic/respondPolicy';
-import { client } from '../net/engineClient';
+import { decideResponse, respondCards } from '../logic/respondPolicy';
+import { sendAction } from '../net/sendAction';
 import type { CardDto, GameState } from '../net/protocol';
 import { useStore, type RespondMode } from '../state/store';
 import { Card } from './Card';
@@ -25,20 +25,26 @@ export function ResponsePopup() {
   const tipDismissed = useStore((s) => s.respondTipDismissed);
   const stateSeq = useStore((s) => s.stateSeq);
   const requestOpen = useStore((s) => s.requests.length > 0);
-  const passedKey = useRef<string | null>(null);
+  // Each prompt is auto-passed at most once, and never after it showed you the popup: clicking a response
+  // clears the playable list before the next prompt arrives, which would otherwise read as "nothing to respond".
+  const passedPrompt = useRef<number | null>(null);
+  const shownPrompt = useRef<number | null>(null);
 
   // An open request always wins, and then we neither show nor answer anything.
   const decision = requestOpen || !game || !prompt || prompt.stateSeq > stateSeq
     ? 'none'
     : decideResponse({ prompt, game, playable, mode, youId: game.youId });
+  if (decision === 'popup' && prompt) shownPrompt.current = prompt.promptSeq;
 
   useEffect(() => {
     if (decision !== 'autoPass' || !game || !prompt) return;
-    const key = autoPassKey(game, prompt);
-    if (passedKey.current === key) return;
-    passedKey.current = key;
-    client.send({ type: 'action', action: 'ok' });
-  }, [decision, game, prompt]);
+    // Only on the exact state the prompt was stamped with: a newer state is flushed just before the next prompt,
+    // so pairing it with this one would decide on a prompt that is about to be replaced.
+    if (prompt.stateSeq !== stateSeq) return;
+    if (passedPrompt.current === prompt.promptSeq || shownPrompt.current === prompt.promptSeq) return;
+    passedPrompt.current = prompt.promptSeq;
+    sendAction({ action: 'ok' }, prompt.promptSeq);
+  }, [decision, game, prompt, stateSeq]);
 
   if (decision !== 'popup' || !game || !prompt) return null;
   const item = game.stack[0];
@@ -95,7 +101,7 @@ export function ResponsePopup() {
                   glow
                   selectable={false}
                   chosen={false}
-                  onClick={() => client.send({ type: 'action', action: 'selectCard', id })}
+                  onClick={() => sendAction({ action: 'selectCard', id })}
                 />
               ))}
             </div>
@@ -106,7 +112,7 @@ export function ResponsePopup() {
           <span className="popup-status">
             {responses.length > 0 ? 'Pick a glowing card, or let it resolve' : 'Nothing to respond with'}
           </span>
-          <button type="button" className="btn" onClick={() => client.send({ type: 'action', action: 'ok' })}>
+          <button type="button" className="btn" onClick={() => sendAction({ action: 'ok' })}>
             Let it resolve
             {okLabel && okLabel !== 'OK' && okLabel !== 'Let it resolve' && <span className="popup-ok-label"> · {okLabel}</span>}
           </button>

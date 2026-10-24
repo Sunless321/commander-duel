@@ -87,7 +87,7 @@ test('glowing cards = playable ∩ your hand/battlefield; none when selection ac
 
 test('ok button mirrors engine label and enabled flag', () => {
   act(() => useStore.getState().handle({
-    type: 'prompt', stateSeq: 1, message: 'Keep this hand?', inputKind: 'mulligan',
+    type: 'prompt', stateSeq: 1, promptSeq: 5, message: 'Keep this hand?', inputKind: 'mulligan',
     ok: { label: 'Keep', enabled: false }, cancel: { label: 'Mulligan', enabled: true },
   }));
   // Prompts arrive before the first state: the bar renders without a game.
@@ -98,7 +98,9 @@ test('ok button mirrors engine label and enabled flag', () => {
   const mull = screen.getByRole('button', { name: 'Mulligan' }) as HTMLButtonElement;
   expect(mull.disabled).toBe(false);
   fireEvent.click(mull);
-  expect(sent).toEqual([{ type: 'action', action: 'cancel' }]);
+  // every click names the prompt it answers, so the engine can drop it if that prompt is gone
+  expect(sent).toEqual([{ type: 'action', action: 'cancel', promptSeq: 5 }]);
+  expect(sent[0]).toHaveProperty('promptSeq', 5);
 });
 
 test('opponent hand renders count of card backs', () => {
@@ -185,7 +187,7 @@ test('a selection over cards only in your visibleLibrary opens "Choose from" and
       }),
     });
     useStore.getState().handle({
-      type: 'prompt', stateSeq: 1, message: 'Search for a Forest or Swamp', inputKind: 'select',
+      type: 'prompt', stateSeq: 1, promptSeq: 2, message: 'Search for a Forest or Swamp', inputKind: 'select',
       ok: { label: 'OK', enabled: false }, cancel: { label: 'Cancel', enabled: true },
     });
     useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: ['c20', 'c21'], chosen: [], min: 1, max: 1 });
@@ -199,18 +201,18 @@ test('a selection over cards only in your visibleLibrary opens "Choose from" and
   // Not duplicated in the safety strip; the prompt's buttons stay reachable.
   expect(screen.queryByRole('region', { name: 'Playable elsewhere' })).toBeNull();
   fireEvent.click(forest);
-  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c20' }]);
+  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c20', promptSeq: 2 }]);
 
   act(() => {
     useStore.getState().handle({ type: 'selection', stateSeq: 1, selectable: ['c20', 'c21'], chosen: ['c20'], min: 1, max: 1 });
     useStore.getState().handle({
-      type: 'prompt', stateSeq: 1, message: 'Search for a Forest or Swamp', inputKind: 'select',
+      type: 'prompt', stateSeq: 1, promptSeq: 3, message: 'Search for a Forest or Swamp', inputKind: 'select',
       ok: { label: 'OK', enabled: true }, cancel: { label: 'Cancel', enabled: true },
     });
   });
   expect(within(screen.getByRole('region', { name: /Choose from/ })).getByRole('button', { name: 'Forest' }).classList.contains('chosen')).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'OK' }));
-  expect(sent[1]).toEqual({ type: 'action', action: 'ok' });
+  expect(sent[1]).toEqual({ type: 'action', action: 'ok', promptSeq: 3 });
 
   // The search ends: the cards leave the state and the panel closes.
   act(() => {
@@ -288,4 +290,12 @@ test('choosing the starting player: every panel, including your own, is selectab
   }
   fireEvent.click(inPlayer('p1').getByRole('button', { name: /You, life/ }));
   expect(sent).toEqual([{ type: 'action', action: 'selectPlayer', id: 'p1' }]);
+});
+
+test('a stale-action rejection (a double click the engine dropped) shows no error toast', () => {
+  render(<Board />);
+  act(() => useStore.getState().handle({ type: 'rejected', requestId: null, reason: 'stale: the prompt changed before the action arrived' }));
+  expect(useStore.getState().lastRejection).toBeNull();
+  act(() => useStore.getState().handle({ type: 'rejected', requestId: null, reason: 'unknown card: c99' }));
+  expect(useStore.getState().lastRejection?.reason).toBe('unknown card: c99');
 });

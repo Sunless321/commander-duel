@@ -31,8 +31,3 @@ export function respondCards(game: GameState, playable: Iterable<string>): strin
   const theirs = new Set(game.players.filter((p) => !p.you).flatMap((p) => [...p.battlefield, ...p.command]));
   return [...playable].filter((id) => !theirs.has(id) && game.cards[id]);
 }
-
-/** One auto-pass per distinct (top stack item, prompt message). */
-export function autoPassKey(game: GameState, prompt: PromptMsg): string {
-  return `${game.stack[0]?.id ?? ''}|${prompt.message}`;
-}

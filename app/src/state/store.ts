@@ -118,7 +118,8 @@ export const useStore = create<StoreState>((set) => ({
         case 'request':
           return { requests: [...s.requests, m] };
         case 'rejected': {
-          if (m.requestId == null) return { lastRejection: m };
+          // A stale action (double click, or a prompt that moved on) was dropped by the engine: nothing to tell you.
+          if (m.requestId == null) return m.reason.startsWith('stale') ? {} : { lastRejection: m };
           const id = m.requestId;
           const requestErrors = { ...s.requestErrors, [id]: m.reason };
           const back = s.answered.find((r) => r.requestId === id);

@@ -115,6 +115,14 @@ public class BridgeGuiGame extends NetworkGuiGame {
     private boolean okEnabled;
     private boolean cancelEnabled;
     private boolean promptScheduled;
+    /** Seq of the last prompt sent, and the Forge input each recent prompt was sent for; guarded by promptLock. */
+    private long promptSeq;
+    private final Map<Long, Input> promptInputs = new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Long, Input> eldest) {
+            return size() > 32;
+        }
+    };
 
     public BridgeGuiGame(Transport out, PendingRequests pending) {
         this.out = out;
@@ -134,8 +142,59 @@ public class BridgeGuiGame extends NetworkGuiGame {
 
     // ---------------------------------------------------------------- UI -> engine
 
-    /** Relays a UI action to the human's game controller. Unknown actions, ids or colors are rejected. */
+    /**
+     * Relays a UI action aimed at the prompt numbered {@code promptSeq}. It is applied only while Forge still waits on
+     * the input that prompt was sent for, and OK/Cancel only while the engine has them enabled; otherwise it is
+     * rejected as stale. Without this a double click, or an auto-pass decided on an older prompt, lands on whatever
+     * input comes next (a target choice, a mana payment, the next priority). Concede is always accepted.
+     */
+    public void onAction(String action, String id, String color, Long promptSeq) {
+        if ("concede".equals(action)) {
+            onAction(action, id, color);
+            return;
+        }
+        if (promptSeq == null) {
+            reject(null, "stale: the action does not say which prompt it answers");
+            return;
+        }
+        dispatch(action, id, color, promptSeq);
+    }
+
+    /** Relays a UI action to whatever input is current (tests and concede). Unknown actions, ids or colors are rejected. */
     public void onAction(String action, String id, String color) {
+        dispatch(action, id, color, null);
+    }
+
+    /** Runs {@code act} on the action thread only if the prompt {@code seq} still stands (null: no check). */
+    private Runnable guarded(Long seq, String action, Runnable act) {
+        if (seq == null) {
+            return act;
+        }
+        return () -> {
+            String stale = staleReason(seq, action);
+            if (stale != null) {
+                reject(null, stale);
+                return;
+            }
+            act.run();
+        };
+    }
+
+    private String staleReason(long seq, String action) {
+        Input now = currentInput();
+        synchronized (promptLock) {
+            Input aimed = promptInputs.get(seq);
+            if (aimed == null || aimed != now) {
+                return "stale: the prompt changed before the action arrived";
+            }
+            if ("ok".equals(action) && !okEnabled || "cancel".equals(action) && !cancelEnabled) {
+                return "stale: " + action + " is not available right now";
+            }
+        }
+        return null;
+    }
+
+    private void dispatch(String action, String id, String color, Long seq) {
         IGameController controller = you == null ? null : getGameController(you);
         GameView game = getGameView();
         if (controller == null || game == null) {
@@ -149,7 +208,7 @@ public class BridgeGuiGame extends NetworkGuiGame {
                     reject(null, "unknown card: " + id);
                     return;
                 }
-                actions.execute(() -> controller.selectCard(card, null, null));
+                actions.execute(guarded(seq, action, () -> controller.selectCard(card, null, null)));
             }
             case "selectPlayer" -> {
                 PlayerView player = findPlayer(game, id);
@@ -157,7 +216,7 @@ public class BridgeGuiGame extends NetworkGuiGame {
                     reject(null, "unknown player: " + id);
                     return;
                 }
-                actions.execute(() -> controller.selectPlayer(player, null));
+                actions.execute(guarded(seq, action, () -> controller.selectPlayer(player, null)));
             }
             case "selectStackItem" -> {
                 StackItemView item = findStackItem(game, id);
@@ -165,17 +224,17 @@ public class BridgeGuiGame extends NetworkGuiGame {
                     reject(null, "unknown stack item: " + id);
                     return;
                 }
-                actions.execute(() -> controller.selectStackItem(item));
+                actions.execute(guarded(seq, action, () -> controller.selectStackItem(item)));
             }
-            case "ok" -> actions.execute(controller::selectButtonOk);
-            case "cancel" -> actions.execute(controller::selectButtonCancel);
+            case "ok" -> actions.execute(guarded(seq, action, controller::selectButtonOk));
+            case "cancel" -> actions.execute(guarded(seq, action, controller::selectButtonCancel));
             case "useMana" -> {
                 Byte mana = manaColor(color);
                 if (mana == null) {
                     reject(null, "unknown mana color: " + color);
                     return;
                 }
-                actions.execute(() -> controller.useMana(mana));
+                actions.execute(guarded(seq, action, () -> controller.useMana(mana)));
             }
             // Not queued behind the action thread, which may be parked on an open request.
             case "concede" -> CompletableFuture.runAsync(() -> concede(controller, game.getGame()), scheduler);
@@ -537,6 +596,9 @@ public class BridgeGuiGame extends NetworkGuiGame {
             m.put("inputKind", inputKind());
             m.put("ok", button(okLabel, okEnabled));
             m.put("cancel", button(cancelLabel, cancelEnabled));
+            promptSeq++;
+            promptInputs.put(promptSeq, currentInput());
+            m.put("promptSeq", promptSeq);
         }
         send(m);
     }
@@ -551,9 +613,13 @@ public class BridgeGuiGame extends NetworkGuiGame {
         return b;
     }
 
-    private String inputKind() {
+    private Input currentInput() {
         IGameController controller = you == null ? null : getGameController(you);
-        Input input = controller instanceof PlayerControllerHuman pch ? pch.getInputProxy().getInput() : null;
+        return controller instanceof PlayerControllerHuman pch ? pch.getInputProxy().getInput() : null;
+    }
+
+    private String inputKind() {
+        Input input = currentInput();
         if (input == null || input instanceof InputLockUI) {
             return "wait";
         }

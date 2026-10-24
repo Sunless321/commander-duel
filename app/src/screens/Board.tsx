@@ -12,7 +12,7 @@ import { ResponsePopup } from '../components/ResponsePopup';
 import { RequestDialog } from '../components/RequestDialog';
 import { StackView } from '../components/StackView';
 import { ZoneViewer } from '../components/ZoneViewer';
-import { client } from '../net/engineClient';
+import { sendAction } from '../net/sendAction';
 import type { GameState, PlayerDto } from '../net/protocol';
 import { useStore } from '../state/store';
 import '../styles/board.css';
@@ -42,7 +42,7 @@ export function Board() {
       selectable: (id) => selectable.has(id),
       chosen: (id) => chosen.has(id),
       onCard: (id) => {
-        if (game.cards[id]) client.send({ type: 'action', action: 'selectCard', id });
+        if (game.cards[id]) sendAction({ action: 'selectCard', id });
       },
       onHover: setHovered,
     };
@@ -57,9 +57,9 @@ export function Board() {
     return unrenderedOffers(game, playable).filter((id) => !inChoices.has(id));
   }, [game, playable, choices]);
 
-  const ok = () => client.send({ type: 'action', action: 'ok' });
-  const cancel = () => client.send({ type: 'action', action: 'cancel' });
-  const concede = () => client.send({ type: 'action', action: 'concede' });
+  const ok = () => sendAction({ action: 'ok' });
+  const cancel = () => sendAction({ action: 'cancel' });
+  const concede = () => sendAction({ action: 'concede' });
 
   return (
     <div className="board">
@@ -85,7 +85,7 @@ export function Board() {
             selectable={flags.selectable}
             chosen={flags.chosen}
             onClick={(id) => {
-              if (game.stack.some((s) => s.id === id)) client.send({ type: 'action', action: 'selectStackItem', id });
+              if (game.stack.some((s) => s.id === id)) sendAction({ action: 'selectStackItem', id });
             }}
           />
         )}
@@ -106,7 +106,7 @@ function Table(props: { game: GameState; flags: CardFlags; onZone: (playerId: st
   const you = game.players.find((p) => p.you);
   const opponents = game.players.filter((p) => !p.you);
   const onPlayer = (id: string) => {
-    if (game.players.some((p) => p.id === id)) client.send({ type: 'action', action: 'selectPlayer', id });
+    if (game.players.some((p) => p.id === id)) sendAction({ action: 'selectPlayer', id });
   };
   const panel = (p: PlayerDto) => (
     <PlayerPanel player={p} game={game} flags={flags} onClick={() => onPlayer(p.id)} onZone={(z) => onZone(p.id, z)} />
@@ -165,7 +165,7 @@ function ManaPool({ player }: { player: PlayerDto }) {
           type="button"
           className={`pip pip-${c}`}
           aria-label={`Use ${c} mana (${player.manaPool[c]})`}
-          onClick={() => client.send({ type: 'action', action: 'useMana', color: c })}
+          onClick={() => sendAction({ action: 'useMana', color: c })}
         >
           {c}<span className="pip-count">{player.manaPool[c]}</span>
         </button>

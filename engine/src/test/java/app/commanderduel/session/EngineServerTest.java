@@ -50,11 +50,11 @@ class EngineServerTest {
         @Override public void onOpen(ServerHandshake h) { }
         @Override public void onMessage(String m) { seen.add(m.length() > 200 ? m.substring(0, 200) : m); JsonObject o = Json.GSON.fromJson(m, JsonObject.class); messages.add(o); if (autoAnswer && o.get("type").getAsString().equals("request")) answerMin(o);
             // winning the coin toss with 3+ players asks which portrait starts: pick ourselves
-            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("Who would you like to start")) send("{\"type\":\"action\",\"action\":\"selectPlayer\",\"id\":\"p0\"}");
+            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("Who would you like to start")) send("{\"type\":\"action\",\"action\":\"selectPlayer\",\"id\":\"p0\",\"promptSeq\":" + o.get("promptSeq") + "}");
             // the coin toss ("play or draw") is a prompt shown before the first state
-            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("coin toss")) send("{\"type\":\"action\",\"action\":\"ok\"}");
+            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("message").getAsString().contains("coin toss")) send("{\"type\":\"action\",\"action\":\"ok\",\"promptSeq\":" + o.get("promptSeq") + "}");
             // keep the opening hand
-            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("inputKind").getAsString().equals("mulligan") && o.getAsJsonObject("ok").get("enabled").getAsBoolean()) send("{\"type\":\"action\",\"action\":\"ok\"}"); }
+            if (autoAnswer && o.get("type").getAsString().equals("prompt") && o.get("inputKind").getAsString().equals("mulligan") && o.getAsJsonObject("ok").get("enabled").getAsBoolean()) send("{\"type\":\"action\",\"action\":\"ok\",\"promptSeq\":" + o.get("promptSeq") + "}"); }
 
         volatile boolean autoAnswer;
 

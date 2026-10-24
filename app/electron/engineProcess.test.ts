@@ -22,6 +22,8 @@ describe('engineProcess', () => {
     expect(jvm).toContain('-XX:+UseG1GC');
     expect(jvm).toContain('-XX:G1PeriodicGCInterval=15000');
     expect(jvm).toContain('-XX:MaxHeapFreeRatio=30');
+    // out of memory must end the process, so the app's engine-stopped recovery takes over instead of a silent hang
+    expect(jvm).toContain('-XX:+ExitOnOutOfMemoryError');
     expect(args.slice(jar)).toEqual(['-jar', 'e.jar', '--forge', 'f', '--data', 'd', '--token', 'tok']);
   });
 });

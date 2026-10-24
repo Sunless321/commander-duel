@@ -102,6 +102,8 @@ export interface PromptButton { label: string; enabled: boolean }
 export interface PromptMsg {
   type: 'prompt';
   stateSeq: number;
+  /** Numbers the Forge input this prompt was sent for; actions echo it so the engine can drop stale ones. */
+  promptSeq: number;
   message: string;
   inputKind: InputKind;
   ok: PromptButton | null;
@@ -166,7 +168,7 @@ export type UiMessage =
   | { type: 'answer'; requestId: string; value: number }
   | { type: 'answer'; requestId: string; text: string }
   | { type: 'answer'; requestId: string; amounts: Record<string, number> }
-  | { type: 'action'; action: GameAction; id?: string; color?: 'W' | 'U' | 'B' | 'R' | 'G' | 'C' };
+  | { type: 'action'; action: GameAction; id?: string; color?: 'W' | 'U' | 'B' | 'R' | 'G' | 'C'; promptSeq?: number };
 
 // ---------------------------------------------------------------- Electron bridge
 

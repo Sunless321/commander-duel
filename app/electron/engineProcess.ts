@@ -33,6 +33,7 @@ const JVM_FLAGS = [
   '-XX:MinHeapFreeRatio=10',
   '-XX:MaxHeapFreeRatio=30',
   '-XX:+UseStringDeduplication',
+  '-XX:+ExitOnOutOfMemoryError',
 ];
 
 export function engineArgs(opts: EngineOptions, token: string): string[] {

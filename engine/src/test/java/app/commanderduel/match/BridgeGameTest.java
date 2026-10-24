@@ -300,6 +300,78 @@ class BridgeGameTest {
         fetchlandSearch();
     }
 
+    private static final BiPredicate<JsonObject, JsonObject> YOUR_EMPTY_MAIN1 = (state, prompt) ->
+            "priority".equals(str(prompt, "inputKind"))
+                    && str(state, "youId").equals(str(state, "activePlayerId"))
+                    && "MAIN1".equals(str(state, "phase"))
+                    && state.getAsJsonArray("stack").isEmpty();
+
+    private long latestPromptSeq() {
+        List<JsonObject> prompts = client.ofType("prompt");
+        return prompts.get(prompts.size() - 1).get("promptSeq").getAsLong();
+    }
+
+    /** A second OK aimed at a prompt that was already answered must not act on the next input (double-click). */
+    @Test
+    void okAimedAtAnAnsweredPromptIsRejected() throws Exception {
+        start(1, YOUR_EMPTY_MAIN1);
+        assertTrue(client.await(c -> c.pausedAt != null, 120_000), "paused at priority in your main phase");
+        long seq = client.pausedAt.get("promptSeq").getAsLong();
+        gui.onAction("ok", null, null, seq);
+        assertTrue(client.await(c -> latestPromptSeq() > seq, 30_000), "a newer prompt after passing priority");
+        int before = client.rejections.size();
+        gui.onAction("ok", null, null, seq);
+        assertTrue(client.await(c -> c.rejections.size() > before, 10_000), "the stale OK is rejected");
+        assertTrue(client.rejections.get(before).startsWith("stale"), "reason: " + client.rejections.get(before));
+    }
+
+    /** OK while the engine has it disabled (targeting with no target picked) is rejected, not applied. */
+    @Test
+    void okWhileDisabledIsRejectedAndTheSpellKeepsTargeting() throws Exception {
+        start(1, YOUR_EMPTY_MAIN1);
+        assertTrue(client.await(c -> c.pausedAt != null, 120_000), "paused at priority in your main phase");
+        Player you = humanPlayer();
+        Card growth = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Giant Growth"), you);
+        Card forest = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Forest"), you);
+        Card bear = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Grizzly Bears"), you);
+        you.getZone(ZoneType.Hand).add(growth);
+        you.getZone(ZoneType.Battlefield).add(forest);
+        you.getZone(ZoneType.Battlefield).add(bear);
+        long priority = client.pausedAt.get("promptSeq").getAsLong();
+        gui.onAction("selectCard", "c" + growth.getId(), null, priority);
+        assertTrue(client.await(c -> {
+            List<JsonObject> p = c.ofType("prompt");
+            return !p.isEmpty() && "target".equals(str(p.get(p.size() - 1), "inputKind"));
+        }, 30_000), "asked for Giant Growth's target");
+        List<JsonObject> prompts = client.ofType("prompt");
+        JsonObject target = prompts.get(prompts.size() - 1);
+        assertFalse(target.getAsJsonObject("ok").get("enabled").getAsBoolean(), "OK starts disabled: " + target);
+        int before = client.rejections.size();
+        gui.onAction("ok", null, null, target.get("promptSeq").getAsLong());
+        assertTrue(client.await(c -> c.rejections.size() > before, 10_000), "the disabled OK is rejected");
+        Thread.sleep(500);
+        List<JsonObject> after = client.ofType("prompt");
+        assertEquals("target", str(after.get(after.size() - 1), "inputKind"), "still targeting");
+        assertFalse(you.getZone(ZoneType.Graveyard).contains(growth), "Giant Growth is not in the graveyard");
+    }
+
+    /** Wire actions must say which prompt they answer. */
+    @Test
+    void actionWithoutPromptSeqIsRejected() throws Exception {
+        start(1, YOUR_EMPTY_MAIN1);
+        assertTrue(client.await(c -> c.pausedAt != null, 120_000), "paused at priority in your main phase");
+        int before = client.rejections.size();
+        gui.onAction("ok", null, null, null);
+        assertTrue(client.await(c -> c.rejections.size() > before, 10_000), "rejected");
+        assertTrue(client.rejections.get(before).startsWith("stale"), "reason: " + client.rejections.get(before));
+    }
+
+    private Player humanPlayer() {
+        List<JsonObject> states = client.ofType("state");
+        String youId = str(states.get(states.size() - 1).getAsJsonObject("state"), "youId");
+        return match.getGame().getPlayers().stream().filter(p -> ("p" + p.getId()).equals(youId)).findFirst().orElseThrow();
+    }
+
     /** In a 4-player pod, clicking an opponent's panel while declaring attackers sends the attack at that player. */
     @Test
     void attackTheChosenOpponentInAThreeBotPod() throws Exception {
