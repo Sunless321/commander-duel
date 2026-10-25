@@ -87,6 +87,32 @@ class BridgeGameTest {
         match = MatchStarter.start(precon(0), bots, gui);
     }
 
+    /** The game log reaches the client in order, turns included, without mana or phase lines. */
+    @Test
+    void gameLogIsRelayedWithoutManaOrPhaseLines() throws Exception {
+        start(1);
+        assertTrue(client.await(c -> c.latestTurn() >= 3, 120_000), "reached turn 3");
+        assertTrue(client.await(c -> c.ofType("log").stream().anyMatch(m -> hasKind(m, "TURN")), 10_000), "a TURN line");
+        List<String> kinds = new ArrayList<>();
+        for (JsonObject m : client.ofType("log")) {
+            for (JsonElement e : m.getAsJsonArray("entries")) {
+                kinds.add(e.getAsJsonObject().get("kind").getAsString());
+                assertFalse(e.getAsJsonObject().get("text").getAsString().isEmpty(), "log text");
+            }
+        }
+        assertFalse(kinds.contains("MANA"), "kinds: " + kinds);
+        assertFalse(kinds.contains("PHASE"), "kinds: " + kinds);
+    }
+
+    private static boolean hasKind(JsonObject log, String kind) {
+        for (JsonElement e : log.getAsJsonArray("entries")) {
+            if (kind.equals(e.getAsJsonObject().get("kind").getAsString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Test
     void humanVsBotPlaysToTurn4WithNoRejections() throws Exception {
         start(1);
@@ -364,6 +390,89 @@ class BridgeGameTest {
         gui.onAction("ok", null, null, null);
         assertTrue(client.await(c -> c.rejections.size() > before, 10_000), "rejected");
         assertTrue(client.rejections.get(before).startsWith("stale"), "reason: " + client.rejections.get(before));
+    }
+
+    /**
+     * Seen in a real game: a bot cast Flawless Forgery on the human's Wurmquake and the game thread died, leaving
+     * the game frozen. The bot gets Forgery and the mana for it, Wurmquake goes into the human's graveyard, and
+     * the game must reach the next turns with no uncaught error on the game thread.
+     */
+    @Test
+    void botCastingFlawlessForgeryOnWurmquakeKeepsTheGameGoing() throws Exception {
+        List<Throwable> uncaught = java.util.Collections.synchronizedList(new ArrayList<>());
+        Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            uncaught.add(e);
+            e.printStackTrace();
+        });
+        try {
+            start(1, YOUR_EMPTY_MAIN1);
+            assertTrue(client.await(c -> c.pausedAt != null, 120_000), "paused at priority in your main phase");
+            Player you = humanPlayer();
+            Player bot = match.getGame().getPlayers().stream().filter(p -> p != you).findFirst().orElseThrow();
+            you.getZone(ZoneType.Graveyard).add(Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Wurmquake"), you));
+            bot.getZone(ZoneType.Hand).add(Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Flawless Forgery"), bot));
+            for (int i = 0; i < 6; i++) {
+                bot.getZone(ZoneType.Battlefield).add(Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Island"), bot));
+            }
+            // As in the real game: Anhelo gives the first instant/sorcery casualty, and there is a creature to sacrifice.
+            for (String name : List.of("Anhelo, the Painter", "Hill Giant", "Hill Giant")) {
+                Card c = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard(name), bot);
+                c.setSickness(false);
+                bot.getZone(ZoneType.Battlefield).add(c);
+            }
+            int turn = client.latestTurn();
+            client.pausedAt = null;
+            client.autoPlay = true;
+            gui.onAction("ok", null, null);
+            boolean cast = client.await(c -> logMentions(c, "Flawless Forgery") || !uncaught.isEmpty(), 120_000);
+            assertTrue(cast, "the bot cast Flawless Forgery");
+            assertTrue(client.await(c -> c.latestTurn() >= turn + 2 || !uncaught.isEmpty(), 120_000),
+                    "the game went on past the bot's turn (turn " + client.latestTurn() + ")");
+            assertTrue(uncaught.isEmpty(), "uncaught: " + uncaught);
+        } finally {
+            Thread.setDefaultUncaughtExceptionHandler(previous);
+        }
+    }
+
+    /** Bots run Forge's AI behind the safety net; a decision that throws gives the fallback and a play-log line. */
+    @Test
+    void botsUseTheSafeControllerAndAFailedDecisionFallsBack() throws Exception {
+        start(1, YOUR_EMPTY_MAIN1);
+        assertTrue(client.await(c -> c.pausedAt != null, 120_000), "paused at priority in your main phase");
+        Player you = humanPlayer();
+        Player bot = match.getGame().getPlayers().stream().filter(p -> p != you).findFirst().orElseThrow();
+        assertTrue(bot.getController() instanceof app.commanderduel.forge.SafePlayerControllerAi, "controller: " + bot.getController());
+        app.commanderduel.forge.SafePlayerControllerAi safe = (app.commanderduel.forge.SafePlayerControllerAi) bot.getController();
+        String got = safe.guard("a test", () -> {
+            throw new IllegalStateException("simulated AI bug");
+        }, () -> "fallback");
+        assertEquals("fallback", got);
+        assertEquals("fine", safe.guard("a test", () -> "fine", () -> "fallback"));
+        assertTrue(client.await(c -> logMentions(c, "hit an engine error while deciding a test"), 10_000), "the play log says so");
+    }
+
+    /** A dead game thread is reported to the player instead of looking like a bot thinking forever. */
+    @Test
+    void anEngineFaultTellsThePlayerTheGameMayBeStuck() throws Exception {
+        start(1, YOUR_EMPTY_MAIN1);
+        assertTrue(client.await(c -> c.pausedAt != null, 120_000), "paused at priority in your main phase");
+        gui.engineFault(new NullPointerException("boom"));
+        assertTrue(client.await(c -> c.first("error", m -> str(m, "message").contains("may be stuck")) != null, 10_000),
+                "errors: " + client.ofType("error"));
+        String msg = str(client.first("error", m -> true), "message");
+        assertTrue(msg.contains("NullPointerException: boom") && msg.contains("Concede"), msg);
+    }
+
+    private static boolean logMentions(ScriptedClient c, String text) {
+        for (JsonObject m : c.ofType("log")) {
+            for (JsonElement e : m.getAsJsonArray("entries")) {
+                if (e.getAsJsonObject().get("text").getAsString().contains(text)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private Player humanPlayer() {

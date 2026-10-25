@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { createWriteStream, existsSync, mkdirSync, renameSync, type WriteStream } from 'node:fs';
+import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 
 export interface EngineOptions {
@@ -11,6 +13,19 @@ export interface EngineOptions {
   readyTimeoutMs?: number;
   /** Called synchronously with the child as soon as it is spawned, before READY. */
   onSpawn?: (child: ChildProcess) => void;
+  /** Where the engine's stderr is saved; the previous run's file is kept as `<name>.previous.log`. */
+  logFile?: string;
+}
+
+/** Opens a fresh log for this engine run, keeping the last run's beside it. Best effort: null if it can't. */
+export function openEngineLog(file: string): WriteStream | null {
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    if (existsSync(file)) renameSync(file, file.replace(/\.log$/, '') + '.previous.log');
+    return createWriteStream(file, { flags: 'w' });
+  } catch {
+    return null;
+  }
 }
 
 export interface RunningEngine {
@@ -67,7 +82,13 @@ export function startEngine(opts: EngineOptions): Promise<RunningEngine> {
       const port = parseReadyLine(line);
       if (port !== null) finish(() => resolve({ port, token, child }));
     });
-    child.stderr!.on('data', (d: Buffer) => process.stderr.write(`[engine] ${d}`));
+    const log = opts.logFile ? openEngineLog(opts.logFile) : null;
+    log?.on('error', () => undefined); // a full disk must not take the app down
+    child.stderr!.on('data', (d: Buffer) => {
+      process.stderr.write(`[engine] ${d}`);
+      log?.write(d);
+    });
+    child.on('exit', (code, signal) => log?.end(`\n[engine exited: code ${code}, signal ${signal}]\n`));
     child.on('error', (err) => finish(() => reject(err)));
     child.on('exit', (code, signal) =>
       finish(() => reject(new Error(`Engine exited before READY (code ${code}, signal ${signal})`))),

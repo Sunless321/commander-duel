@@ -51,6 +51,38 @@ class DeckStoreTest {
     }
 
     @Test
+    void renameKeepsTheIdAndCardsAndRejectsBlankNames() {
+        ImportResult r = store.importDeck("Atraxa Test", List.of("Atraxa, Praetors' Voice"), realMain());
+        String id = r.deck().id();
+        int cards = store.load(id).getMain().countAll();
+        DeckSummary renamed = store.rename(id, "  Superfriends  ");
+        assertEquals(id, renamed.id());
+        assertEquals("Superfriends", renamed.name());
+        assertEquals("Superfriends", store.list().get(0).name());
+        assertEquals(cards, store.load(id).getMain().countAll());
+        assertEquals(List.of("Atraxa, Praetors' Voice"), store.list().get(0).commanders());
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> store.rename(id, "   "));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> store.rename("nope", "X"));
+    }
+
+    @Test
+    void deleteSetsTheDeckAsideInsteadOfErasingIt() throws IOException {
+        Path dir = Files.createTempDirectory("decks-root").resolve("decks");
+        DeckStore s = new DeckStore(dir);
+        String id = s.importDeck("Atraxa Test", List.of("Atraxa, Praetors' Voice"), realMain()).deck().id();
+        s.delete(id);
+        assertTrue(s.list().isEmpty());
+        assertTrue(Files.exists(dir.resolveSibling("deleted-decks").resolve(id + ".dck")));
+        // a second deck with the same file name deleted later doesn't overwrite the first
+        String again = s.importDeck("Atraxa Test", List.of("Atraxa, Praetors' Voice"), realMain()).deck().id();
+        s.delete(again);
+        try (var files = Files.list(dir.resolveSibling("deleted-decks"))) {
+            assertEquals(2, files.count());
+        }
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> s.delete(id));
+    }
+
+    @Test
     void importsAndListsDeck() {
         ImportResult r = store.importDeck("Atraxa Test", List.of("Atraxa, Praetors' Voice"), realMain());
         assertTrue(r.ok(), () -> r.unknownCards() + " " + r.problems());

@@ -13,11 +13,11 @@ export interface CardFlags {
 const isLand = (c: CardDto | undefined) => !!c?.typeLine && /\bLand\b/.test(c.typeLine);
 
 /** One card on the table, with its tapped slot, combat role, and live P/T, damage and counters. */
-export function FieldCard({ id, game, flags }: { id: string; game: GameState; flags: CardFlags }) {
+export function FieldCard({ id, game, flags, upright }: { id: string; game: GameState; flags: CardFlags; upright?: boolean }) {
   const card = game.cards[id];
   const attacking = game.combat.some((a) => a.attackerId === id);
   const blocking = game.combat.some((a) => a.blockerIds.includes(id));
-  const classes = ['slot', card?.tapped && 'tapped', attacking && 'attacking', blocking && 'blocking'].filter(Boolean).join(' ');
+  const classes = ['slot', card?.tapped && !upright && 'tapped', attacking && 'attacking', blocking && 'blocking'].filter(Boolean).join(' ');
   const counters = card ? Object.entries(card.counters).filter(([, n]) => n > 0) : [];
   return (
     <div className={classes} data-card-id={id} onMouseEnter={() => flags.onHover(id)} onMouseLeave={() => flags.onHover(null)}>
@@ -28,9 +28,11 @@ export function FieldCard({ id, game, flags }: { id: string; game: GameState; fl
         selectable={flags.selectable(id)}
         chosen={flags.chosen(id)}
         onClick={() => flags.onCard(id)}
+        upright={upright}
       />
       {card && !card.hidden && (
         <div className="badges">
+          {upright && card.tapped && <span className="badge tap">Tapped</span>}
           {card.power != null && card.toughness != null && <span className="badge pt">{card.power}/{card.toughness}</span>}
           {card.damage > 0 && <span className="badge dmg">−{card.damage}</span>}
           {counters.map(([k, n]) => <span key={k} className="badge ctr" title={k}>{n} {k}</span>)}

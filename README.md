@@ -10,7 +10,32 @@ A Windows desktop app for playing Magic: The Gathering Commander (EDH) against b
 
 Nothing else is needed: Java is bundled. Card images are downloaded from [Scryfall](https://scryfall.com) the first time each card is shown and cached in `%APPDATA%\Commander Duel\card-cache`, so the first games need an internet connection.
 
-**Import a deck:** on the Decks screen, paste a public Archidekt deck link, or a text decklist (`1 Sol Ring` per line) with the commander under a `Commander` header or tagged `*CMDR*`.
+**Import a deck:** on the Decks screen, paste a public Archidekt deck link, or a text decklist (`1 Sol Ring` per line) with the commander under a `Commander` header or tagged `*CMDR*`. Import as many decks as you like; each one gets **Rename** and **Delete** buttons.
+
+## Update to a new version
+
+Your decks, saved matches and settings are kept when you update. They live in `%APPDATA%\Commander Duel`, which the installer never touches.
+
+1. **Close Commander Duel** if it is open, including a game in progress (concede it or just close the window).
+2. Download the newest `Commander Duel Setup <version>.exe` from the [Releases page](https://github.com/Sunless321/commander-duel/releases/latest).
+3. Run it and click through. It installs over the old version; you don't need to uninstall first. If SmartScreen warns, click **More info → Run anyway**.
+4. Start Commander Duel as usual.
+
+To check which version you have: **Settings → Apps → Installed apps → Commander Duel**.
+
+## What you can do
+
+- **Play** 1–3 bots, each with its own deck (yours, a precon or a random precon) and difficulty.
+- **Respond** to opponents: a popup shows their spell large enough to read, its targets, and the cards you can answer with.
+- **See everything:** click an empty spot of an opponent's field (or **View board**) for their whole board at once. Tapped cards are drawn upright with a "Tapped" label.
+- **Know what's coming:** a red banner warns when creatures attack you (with the total damage) or an opponent's spell targets you or your permanents.
+- **Follow the game** in the **Log** on the right. It is cleared when the match ends.
+- **Save a match** with **Save recording** on the game-over screen, then watch it turn by turn from **Saved matches** on the Decks screen.
+
+## If something goes wrong
+
+- **The game seems stuck** (a bot "thinking" forever): you'll see a red notice if the engine hit an error. Press **Concede** to leave the game. Bots that hit an engine error while deciding now make a safe choice instead of freezing the game.
+- **Report a problem:** attach `%APPDATA%\Commander Duel\logs\engine.log` (the last run) and `engine.previous.log` (the run before) to an issue on GitHub.
 
 ## Build from source
 

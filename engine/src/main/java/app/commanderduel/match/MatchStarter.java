@@ -1,6 +1,7 @@
 package app.commanderduel.match;
 
 import app.commanderduel.forge.BridgeGuiGame;
+import app.commanderduel.forge.SafeLobbyPlayerAi;
 import forge.deck.Deck;
 import forge.game.GameRules;
 import forge.game.GameType;
@@ -29,8 +30,9 @@ public final class MatchStarter {
         players.add(human);
         int team = 1;
         for (BotSpec bot : bots) {
-            RegisteredPlayer rp = RegisteredPlayer.forCommander(bot.deck()).setPlayer(GamePlayerUtil.createAiPlayer(
-                    botName(bot), 0, 0, bot.difficulty().options(), bot.difficulty().profile()));
+            // Forge's AI behind a safety net: a bot that errors while deciding makes a safe choice instead of freezing the game.
+            RegisteredPlayer rp = RegisteredPlayer.forCommander(bot.deck()).setPlayer(
+                    new SafeLobbyPlayerAi(botName(bot), bot.difficulty().options(), bot.difficulty().profile()));
             rp.setTeamNumber(team++);
             players.add(rp);
         }

@@ -5,7 +5,16 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { client } from '../net/engineClient';
 import type { CardDto, GameState, PlayerDto, PromptMsg, RequestMsg, UiMessage } from '../net/protocol';
 import { useStore } from '../state/store';
-import { ResponsePopup } from './ResponsePopup';
+import { ResponsePopup, stackText } from './ResponsePopup';
+
+test("a permanent spell's bare-name stack text is replaced by its rules text; real stack text is kept", () => {
+  const majesty = { name: 'Colossal Majesty', text: 'At the beginning of your upkeep, draw a card.' } as CardDto;
+  expect(stackText('Colossal Majesty (174)', majesty)).toBe(majesty.text);
+  expect(stackText('Lightning Bolt deals 3 damage to any target.', { ...majesty, name: 'Lightning Bolt' })).toBe(
+    'Lightning Bolt deals 3 damage to any target.',
+  );
+  expect(stackText('Colossal Majesty', undefined)).toBe('Colossal Majesty');
+});
 
 let sent: UiMessage[] = [];
 

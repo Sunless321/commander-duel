@@ -69,6 +69,17 @@ public class Session {
         }
     }
 
+    /**
+     * An error escaped a Forge game thread. If it was the game loop, the game is frozen with nobody told, which
+     * looks like a bot thinking forever; so while a game is running the client is told it may be stuck.
+     */
+    public void onGameThreadError(Throwable e) {
+        BridgeGuiGame g = gui;
+        if (g != null && gameRunning()) {
+            g.engineFault(e);
+        }
+    }
+
     public void shutdown() {
         onDisconnect();
         starter.shutdownNow();
@@ -100,6 +111,8 @@ public class Session {
             switch (type) {
                 case "listLobby" -> listLobby();
                 case "importDeck" -> importDeck(msg);
+                case "renameDeck" -> renameDeck(msg);
+                case "deleteDeck" -> deleteDeck(msg);
                 case "startGame" -> startGame(msg);
                 case "answer" -> answer(msg);
                 case "action" -> action(msg);
@@ -166,6 +179,38 @@ public class Session {
         m.put("unknownCards", r.unknownCards());
         m.put("problems", r.problems());
         send(m);
+    }
+
+    /** Renames a saved deck, then sends the refreshed lobby. Bad ids or names come back as an error. */
+    private void renameDeck(JsonObject msg) {
+        String id = str(msg, "deckId");
+        if (id == null) {
+            error("renameDeck needs a deckId");
+            return;
+        }
+        try {
+            decks.rename(id, str(msg, "name"));
+        } catch (IllegalArgumentException e) {
+            error(e.getMessage());
+            return;
+        }
+        listLobby();
+    }
+
+    /** Deletes (sets aside) a saved deck, then sends the refreshed lobby. */
+    private void deleteDeck(JsonObject msg) {
+        String id = str(msg, "deckId");
+        if (id == null) {
+            error("deleteDeck needs a deckId");
+            return;
+        }
+        try {
+            decks.delete(id);
+        } catch (IllegalArgumentException e) {
+            error(e.getMessage());
+            return;
+        }
+        listLobby();
     }
 
     private void startGame(JsonObject msg) {

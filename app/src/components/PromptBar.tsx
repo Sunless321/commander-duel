@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { cleanText } from '../logic/cleanText';
 import type { PromptButton } from '../net/protocol';
 import { useStore } from '../state/store';
 
@@ -30,8 +31,8 @@ export function PromptBar({ onOk, onCancel }: { onOk: () => void; onCancel: () =
     <section className="prompt-bar" aria-label="Prompt">
       {info && (
         <div className="toast info" role="status">
-          {info.title && <strong>{info.title}</strong>}
-          <span>{info.message}</span>
+          {info.title && <strong>{cleanText(info.title)}</strong>}
+          <span>{cleanText(info.message)}</span>
           <button type="button" className="toast-close" aria-label="Dismiss" onClick={() => useStore.getState().dismissInfo()}>✕</button>
         </div>
       )}
@@ -42,7 +43,7 @@ export function PromptBar({ onOk, onCancel }: { onOk: () => void; onCancel: () =
         </div>
       )}
       {toast && <div className="toast rejected" role="status">{toast}</div>}
-      <p className={`prompt-message${prompt?.inputKind === 'wait' ? ' waiting' : ''}`}>{prompt?.message || 'Waiting for the engine…'}</p>
+      <p className={`prompt-message${prompt?.inputKind === 'wait' ? ' waiting' : ''}`}>{(prompt && cleanText(prompt.message)) || 'Waiting for the engine…'}</p>
       {button(prompt?.ok ?? null, 'ok', onOk)}
       {button(prompt?.cancel ?? null, 'cancel', onCancel)}
     </section>

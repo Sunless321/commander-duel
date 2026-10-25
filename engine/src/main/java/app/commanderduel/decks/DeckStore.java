@@ -97,6 +97,37 @@ public class DeckStore {
         return d;
     }
 
+    /** Gives a saved deck a new name; its id (file) stays the same, so nothing that refers to it breaks. */
+    public DeckSummary rename(String id, String newName) {
+        String name = newName == null ? "" : newName.trim();
+        if (name.isEmpty()) throw new IllegalArgumentException("A deck name can't be empty");
+        if (name.length() > 100) throw new IllegalArgumentException("A deck name can be at most 100 characters");
+        Deck d = load(id);
+        d.setName(name);
+        DeckSerializer.writeDeck(d, decksDir.resolve(sanitize(id) + ".dck").toFile());
+        return summarize(sanitize(id), d);
+    }
+
+    /**
+     * Removes a saved deck from the list. The file is moved to {@code deleted-decks} next to the decks folder
+     * rather than erased, so a deck deleted by mistake can still be recovered by hand.
+     */
+    public void delete(String id) {
+        Path file = decksDir.resolve(sanitize(id) + ".dck");
+        if (!Files.exists(file)) throw new IllegalArgumentException("Unknown deck: " + id);
+        Path bin = decksDir.resolveSibling("deleted-decks");
+        try {
+            Files.createDirectories(bin);
+            Path target = bin.resolve(file.getFileName());
+            for (int n = 2; Files.exists(target); n++) {
+                target = bin.resolve(sanitize(id) + "_" + n + ".dck");
+            }
+            Files.move(file, target);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     public List<DeckSummary> precons() {
         List<DeckSummary> out = new ArrayList<>();
         for (Deck d : FModel.getDecks().getCommanderPrecons()) {

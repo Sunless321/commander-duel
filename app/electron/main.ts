@@ -5,6 +5,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { fetchArchidekt, parseDeckId, parseTextList } from './archidekt';
 import { registerCardProtocol, registerCardScheme } from './cardImages';
 import { startEngine, type EngineOptions, type RunningEngine } from './engineProcess';
+import { deleteRecording, listRecordings, loadRecording, saveRecording } from './recordings';
 
 // Must happen before app is ready so userData resolves to %APPDATA%\Commander Duel.
 app.setName('Commander Duel');
@@ -44,7 +45,12 @@ function enginePaths(): Omit<EngineOptions, 'dataDir'> {
 function launchEngine(): Promise<RunningEngine> {
   killEngine();
   const p = Promise.resolve().then(() =>
-    startEngine({ ...enginePaths(), dataDir: app.getPath('userData'), onSpawn: (c) => (child = c) }),
+    startEngine({
+      ...enginePaths(),
+      dataDir: app.getPath('userData'),
+      logFile: join(app.getPath('userData'), 'logs', 'engine.log'),
+      onSpawn: (c) => (child = c),
+    }),
   );
   engine = p;
   return p;
@@ -80,6 +86,11 @@ app.whenReady().then(() => {
     const id = parseDeckId(text);
     return id ? fetchArchidekt(id) : parseTextList(text);
   });
+  const recordings = join(app.getPath('userData'), 'recordings');
+  ipcMain.handle('recording:save', (_e, r: unknown) => saveRecording(recordings, r));
+  ipcMain.handle('recording:list', () => listRecordings(recordings));
+  ipcMain.handle('recording:load', (_e, id: unknown) => loadRecording(recordings, id));
+  ipcMain.handle('recording:delete', (_e, id: unknown) => deleteRecording(recordings, id));
   void launchEngine().catch((e) => console.error('engine failed to start', e));
   createWindow();
 });

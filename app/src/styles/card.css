@@ -11,7 +11,12 @@
 .card.hand { width: 108px; height: 150px; }
 .card.field { width: 74px; height: 104px; }
 .card.stack { width: 86px; height: 120px; }
-.card img { width: 100%; height: 100%; display: block; object-fit: cover; user-select: none; }
+/* The image sits over the always-drawn text frame and fades in once it has loaded. */
+.card img {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; user-select: none;
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.card img.loaded { opacity: 1; }
 
 .card.tapped { transform: rotate(90deg); }
 .card.glow { box-shadow: 0 0 0 2px #4fb3ff, 0 0 12px 2px rgba(79, 179, 255, 0.6); transform: translateY(-4px); }

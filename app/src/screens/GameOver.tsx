@@ -16,6 +16,19 @@ export function GameOver() {
   const lastError = useStore((s) => s.lastError);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const recording = useStore((s) => s.lastRecording);
+  const [save, setSave] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+
+  const saveRecording = async () => {
+    if (!recording || save === 'saving' || save === 'saved') return;
+    setSave('saving');
+    try {
+      await window.duel.saveRecording(recording);
+      setSave('saved');
+    } catch {
+      setSave('failed');
+    }
+  };
 
   const result = over ?? current;
   const names = result?.winnerNames ?? [];
@@ -66,6 +79,25 @@ export function GameOver() {
         </button>
         <button type="button" className="btn" disabled={starting} onClick={backToDecks}>Back to decks</button>
       </div>
+      {recording && (
+        <div className="game-over-save">
+          <button
+            type="button"
+            className="btn"
+            disabled={save === 'saving' || save === 'saved' || starting}
+            onClick={() => void saveRecording()}
+          >
+            {save === 'saved' ? 'Recording saved ✓' : save === 'saving' ? 'Saving…' : 'Save recording'}
+          </button>
+          <span className="game-over-hint">
+            {save === 'failed'
+              ? "Couldn't save the recording. Try again."
+              : save === 'saved'
+                ? 'Watch it any time from Saved matches on the decks screen.'
+                : `Keeps a turn-by-turn replay of this match (${recording.turns.length} turns). Unsaved matches are discarded.`}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

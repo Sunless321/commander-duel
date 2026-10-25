@@ -1,3 +1,5 @@
+import type { Recording, RecordingSummary } from '../logic/recording';
+
 // TypeScript mirror of the engine wire protocol (engine Dto.java, BridgeGuiGame.java, Session.java).
 // Ids are prefixed strings: players "p<n>", cards "c<n>", stack items "s<n>", amount targets "t<i>",
 // options "o<n>", requests "r<n>".
@@ -145,11 +147,15 @@ export interface RequestMsg {
 export interface RejectedMsg { type: 'rejected'; requestId: string | null; reason: string }
 export interface GameOverMsg { type: 'gameOver'; winnerNames: string[]; youWon: boolean }
 export interface InfoMsg { type: 'info'; title?: string | null; message: string }
+/** One line of Forge's game log; `kind` is its GameLogEntryType (DAMAGE, LIFE, COMBAT, STACK_ADD, TURN, ...). */
+export interface LogEntry { kind: string; text: string }
+/** New game-log lines since the last batch (mana and phase lines are left out). */
+export interface LogMsg { type: 'log'; entries: LogEntry[] }
 export interface ErrorMsg { type: 'error'; message: string }
 
 export type EngineMessage =
   | ReadyMsg | LobbyMsg | ImportResultMsg | StateMsg | PromptMsg | SelectionMsg | PlayableMsg
-  | RequestMsg | RejectedMsg | GameOverMsg | InfoMsg | ErrorMsg;
+  | RequestMsg | RejectedMsg | GameOverMsg | InfoMsg | ErrorMsg | LogMsg;
 
 /** Emitted locally by EngineClient when the socket closes; never sent by the engine. */
 export interface EngineStoppedMsg { type: 'engineStopped' }
@@ -163,6 +169,8 @@ export type GameAction = 'selectCard' | 'selectPlayer' | 'selectStackItem' | 'ok
 export type UiMessage =
   | { type: 'listLobby' }
   | { type: 'importDeck'; name: string; commanders: string[]; main: { count: number; name: string }[]; skippedLines?: string[] }
+  | { type: 'renameDeck'; deckId: string; name: string }
+  | { type: 'deleteDeck'; deckId: string }
   | { type: 'startGame'; deckId: string; bots: { deck: BotDeck; difficulty: Difficulty }[] }
   | { type: 'answer'; requestId: string; optionIds: string[] }
   | { type: 'answer'; requestId: string; value: number }
@@ -182,4 +190,8 @@ export interface DuelBridge {
   getEngine(): Promise<EngineEndpoint>;
   restartEngine(): Promise<EngineEndpoint>;
   importArchidekt(url: string): Promise<ArchidektResult>;
+  saveRecording(r: Recording): Promise<RecordingSummary>;
+  listRecordings(): Promise<RecordingSummary[]>;
+  loadRecording(id: string): Promise<Recording>;
+  deleteRecording(id: string): Promise<void>;
 }

@@ -78,7 +78,7 @@ test('glowing cards = playable ∩ your hand/battlefield; none when selection ac
 
   // Clicks relay to the engine, whatever is lit.
   fireEvent.click(cardEl('c2'));
-  fireEvent.click(screen.getByRole('button', { name: /Bot 1/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^Bot 1, life/ }));
   expect(sent).toEqual([
     { type: 'action', action: 'selectCard', id: 'c2' },
     { type: 'action', action: 'selectPlayer', id: 'p2' },
@@ -290,6 +290,83 @@ test('choosing the starting player: every panel, including your own, is selectab
   }
   fireEvent.click(inPlayer('p1').getByRole('button', { name: /You, life/ }));
   expect(sent).toEqual([{ type: 'action', action: 'selectPlayer', id: 'p1' }]);
+});
+
+test("clicking empty space in an opponent's field opens their whole board; a card click stays a card click", () => {
+  act(() => useStore.getState().handle({
+    type: 'state', seq: 1,
+    state: stateWith((g) => {
+      g.players[1].battlefield = ['c4', 'c10', 'c11'];
+      g.players[1].command = ['c12'];
+      g.cards.c10 = card('c10', 'p2', 'Battlefield', { name: 'Forest', typeLine: 'Basic Land — Forest', power: null, toughness: null, tapped: true });
+      g.cards.c11 = card('c11', 'p2', 'Battlefield', { name: 'Sol Ring', typeLine: 'Artifact', power: null, toughness: null });
+      g.cards.c12 = card('c12', 'p2', 'Command', { name: 'Their Commander', commander: true });
+    }),
+  }));
+  render(<Board />);
+  const field = document.querySelector('[data-player-id="p2"] .opp-field') as HTMLElement;
+  fireEvent.click(within(field).getByRole('button', { name: 'Card c4' }));
+  expect(screen.queryByRole('dialog', { name: /Bot 1's board/ })).toBeNull();
+  expect(sent).toEqual([{ type: 'action', action: 'selectCard', id: 'c4' }]);
+
+  fireEvent.click(field);
+  const dialog = screen.getByRole('dialog', { name: /Bot 1's board/ });
+  expect(within(dialog).getByRole('region', { name: 'Creatures' })).toBeTruthy();
+  expect(within(dialog).getByRole('region', { name: 'Lands' })).toBeTruthy();
+  expect(within(dialog).getByRole('region', { name: /Artifacts/ })).toBeTruthy();
+  expect(within(dialog).getByRole('region', { name: 'Command zone' })).toBeTruthy();
+  // Tapped cards are drawn upright with a badge.
+  const forest = within(dialog).getByRole('button', { name: 'Forest' });
+  expect(forest.classList.contains('tapped')).toBe(false);
+  expect(within(dialog).queryByText('Tapped')).not.toBeNull();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+  expect(screen.queryByRole('dialog', { name: /Bot 1's board/ })).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: "View Bot 1's whole board" }));
+  expect(screen.getByRole('dialog', { name: /Bot 1's board/ })).toBeTruthy();
+});
+
+test('the hover preview shows a tapped card upright', () => {
+  act(() => useStore.getState().handle({
+    type: 'state', seq: 1, state: stateWith((g) => { g.cards.c3 = card('c3', 'p1', 'Battlefield', { tapped: true }); }),
+  }));
+  render(<Board />);
+  expect(cardEl('c3').classList.contains('tapped')).toBe(true);
+  fireEvent.mouseEnter(document.querySelector('[data-card-id="c3"]') as HTMLElement);
+  const preview = document.querySelector('.preview .card') as HTMLElement;
+  expect(preview.classList.contains('tapped')).toBe(false);
+});
+
+test('the play log lists engine log lines and empties when the match ends', () => {
+  act(() => {
+    useStore.getState().handle({ type: 'state', seq: 1, state: game() });
+    useStore.getState().handle({ type: 'log', entries: [
+      { kind: 'TURN', text: 'Turn 3 (Bot 1)' },
+      { kind: 'DAMAGE', text: 'Grizzly Bears deals 2 combat damage to You.' },
+    ] });
+  });
+  render(<Board />);
+  const log = screen.getByRole('region', { name: 'Game log' });
+  const line = within(log).getByText('Grizzly Bears deals 2 combat damage to You.');
+  expect(line.className).toContain('log-damage');
+  expect(line.className).toContain('you');
+  act(() => useStore.getState().handle({ type: 'gameOver', winnerNames: ['Bot 1'], youWon: false }));
+  expect(useStore.getState().log).toEqual([]);
+});
+
+test('an attack on you shows the incoming damage banner', () => {
+  act(() => useStore.getState().handle({
+    type: 'state', seq: 1,
+    state: stateWith((g) => {
+      g.activePlayerId = 'p2';
+      g.cards.c4 = card('c4', 'p2', 'Battlefield', { name: 'Grizzly Bears', power: '3' });
+      g.combat = [{ attackerId: 'c4', defenderId: 'p1', blockerIds: [] }];
+    }),
+  }));
+  render(<Board />);
+  const banner = screen.getByRole('alert', { name: 'Incoming damage' });
+  expect(banner.textContent).toContain('Incoming attack: 3 damage to you');
+  expect(banner.textContent).toContain('Grizzly Bears');
 });
 
 test('a stale-action rejection (a double click the engine dropped) shows no error toast', () => {

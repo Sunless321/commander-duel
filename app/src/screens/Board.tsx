@@ -5,6 +5,9 @@ import { ChooseFrom, offBoardChoices } from '../components/ChooseFrom';
 import { ConcedeButton } from '../components/ConcedeButton';
 import { ElsewhereStrip, unrenderedOffers } from '../components/ElsewhereStrip';
 import { Hand } from '../components/Hand';
+import { IncomingBanner } from '../components/IncomingBanner';
+import { PlayLog } from '../components/PlayLog';
+import { OpponentBoard } from '../components/OpponentBoard';
 import { PhaseBar } from '../components/PhaseBar';
 import { PlayerPanel, type ViewZone } from '../components/PlayerPanel';
 import { PromptBar } from '../components/PromptBar';
@@ -28,6 +31,7 @@ export function Board() {
   const playable = useStore((s) => s.playable);
   const [hovered, setHovered] = useState<string | null>(null);
   const [openZone, setOpenZone] = useState<OpenZone | null>(null);
+  const [openBoard, setOpenBoard] = useState<string | null>(null);
 
   const flags = useMemo<CardFlags | null>(() => {
     if (!game) return null;
@@ -65,7 +69,7 @@ export function Board() {
     <div className="board">
       <div className="board-main">
         {game && flags ? (
-          <Table game={game} flags={flags} onZone={(playerId, zone) => setOpenZone({ playerId, zone })} />
+          <Table game={game} flags={flags} onZone={(playerId, zone) => setOpenZone({ playerId, zone })} onBoard={setOpenBoard} />
         ) : (
           <div className="shuffling">Shuffling up…</div>
         )}
@@ -75,9 +79,9 @@ export function Board() {
       </div>
       <aside className="board-side">
         {game && hovered && game.cards[hovered] && !game.cards[hovered].hidden && (
-          <div className="preview"><Card card={game.cards[hovered]} size="hand" glow={false} selectable={false} chosen={false} /></div>
+          <div className="preview"><Card card={game.cards[hovered]} size="hand" glow={false} selectable={false} chosen={false} upright /></div>
         )}
-        <div className="grow" />
+        {game ? <PlayLog /> : <div className="grow" />}
         {game && flags && <ElsewhereStrip ids={elsewhere} game={game} flags={flags} />}
         {game && flags && (
           <StackView
@@ -95,18 +99,28 @@ export function Board() {
       {game && flags && openZone && (
         <ZoneViewer game={game} playerId={openZone.playerId} zone={openZone.zone} flags={flags} onClose={() => setOpenZone(null)} />
       )}
+      {game && flags && openBoard && (
+        <OpponentBoard game={game} playerId={openBoard} flags={flags} onClose={() => setOpenBoard(null)} />
+      )}
       <ResponsePopup />
       <RequestDialog />
     </div>
   );
 }
 
-function Table(props: { game: GameState; flags: CardFlags; onZone: (playerId: string, zone: ViewZone) => void }) {
-  const { game, flags, onZone } = props;
+/** The table: opponents, phase bar, your side and hand. `readOnly` (the replay viewer) never talks to the engine. */
+export function Table(props: {
+  game: GameState;
+  flags: CardFlags;
+  onZone: (playerId: string, zone: ViewZone) => void;
+  onBoard: (playerId: string) => void;
+  readOnly?: boolean;
+}) {
+  const { game, flags, onZone, onBoard, readOnly } = props;
   const you = game.players.find((p) => p.you);
   const opponents = game.players.filter((p) => !p.you);
   const onPlayer = (id: string) => {
-    if (game.players.some((p) => p.id === id)) sendAction({ action: 'selectPlayer', id });
+    if (!readOnly && game.players.some((p) => p.id === id)) sendAction({ action: 'selectPlayer', id });
   };
   const panel = (p: PlayerDto) => (
     <PlayerPanel player={p} game={game} flags={flags} onClick={() => onPlayer(p.id)} onZone={(z) => onZone(p.id, z)} />
@@ -118,7 +132,21 @@ function Table(props: { game: GameState; flags: CardFlags; onZone: (playerId: st
         {opponents.map((p) => (
           <div key={p.id} className="opp-strip" data-player-id={p.id}>
             {panel(p)}
-            <div className="opp-field">
+            <div
+              className="opp-field"
+              onClick={(e) => {
+                // Empty space opens the full view; a click on a card stays a card click (targets, attacks).
+                if (!(e.target as HTMLElement).closest('button')) onBoard(p.id);
+              }}
+            >
+              <button
+                type="button"
+                className="opp-board-btn"
+                aria-label={`View ${p.name}'s whole board`}
+                onClick={() => onBoard(p.id)}
+              >
+                View board ({p.battlefield.length})
+              </button>
               {p.command.length > 0 && (
                 <div className="command-mini" aria-label={`${p.name}'s command zone`}>
                   {p.command.map((id) => <FieldCard key={id} id={id} game={game} flags={flags} />)}
@@ -132,6 +160,7 @@ function Table(props: { game: GameState; flags: CardFlags; onZone: (playerId: st
       <PhaseBar game={game} />
       {you && (
         <>
+          <IncomingBanner game={game} onHover={flags.onHover} />
           <div className="my-row" data-player-id={you.id}>
             <section className="command-zone" aria-label="Command zone">
               <span className="zone-title">Command zone</span>
@@ -144,7 +173,7 @@ function Table(props: { game: GameState; flags: CardFlags; onZone: (playerId: st
           <div className="bottom-row">
             <div className="my-panel">
               {panel(you)}
-              <ManaPool player={you} />
+              {!readOnly && <ManaPool player={you} />}
             </div>
             <Hand ids={you.hand} game={game} flags={flags} />
           </div>

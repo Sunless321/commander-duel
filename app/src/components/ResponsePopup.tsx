@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { cleanText } from '../logic/cleanText';
 import { decideResponse, respondCards } from '../logic/respondPolicy';
 import { sendAction } from '../net/sendAction';
 import type { CardDto, GameState } from '../net/protocol';
@@ -29,6 +30,8 @@ export function ResponsePopup() {
   // clears the playable list before the next prompt arrives, which would otherwise read as "nothing to respond".
   const passedPrompt = useRef<number | null>(null);
   const shownPrompt = useRef<number | null>(null);
+  // The card under the mouse, shown full size beside the spell so its text is readable.
+  const [zoom, setZoom] = useState<string | null>(null);
 
   // An open request always wins, and then we neither show nor answer anything.
   const decision = requestOpen || !game || !prompt || prompt.stateSeq > stateSeq
@@ -54,6 +57,8 @@ export function ResponsePopup() {
   const title = source?.zone === 'Stack' ? `${who} is casting a spell` : `${who} activated an ability`;
   const responses = respondCards(game, playable);
   const okLabel = prompt.ok?.label;
+  const zoomed = zoom && zoom !== item.sourceCardId ? game.cards[zoom] : undefined;
+  const hover = (id: string) => ({ onMouseEnter: () => setZoom(id), onMouseLeave: () => setZoom(null) });
 
   return (
     <div className="modal-backdrop popup-backdrop">
@@ -64,16 +69,24 @@ export function ResponsePopup() {
         </header>
 
         <div className="popup-item">
-          {source && <Card card={source} size="stack" glow={false} selectable={false} chosen={false} />}
-          {item.targetIds.length > 0 && (
-            <>
-              <svg width="40" height="20" viewBox="0 0 40 20" aria-hidden="true">
-                <path d="M2 10h32M26 3l8 7-8 7" fill="none" stroke="#d4a64a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {item.targetIds.map((id) => <Target key={id} id={id} game={game} />)}
-            </>
+          {source && (
+            <div className="popup-source">
+              <Card card={zoomed ?? source} size="hand" glow={false} selectable={false} chosen={false} upright />
+              {zoomed && <span className="popup-zoom-note">Showing {zoomed.name}</span>}
+            </div>
           )}
-          <p className="popup-text">{item.text}</p>
+          <div className="popup-detail">
+            {source?.name && <p className="popup-name">{source.name}</p>}
+            <p className="popup-text">{cleanText(stackText(item.text, source))}</p>
+            {item.targetIds.length > 0 && (
+              <div className="popup-targets">
+                <span className="popup-label">Targeting</span>
+                <div className="popup-target-row">
+                  {item.targetIds.map((id) => <Target key={id} id={id} game={game} hover={hover(id)} />)}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {!tipDismissed && (
@@ -94,15 +107,16 @@ export function ResponsePopup() {
             <span className="popup-label">You can respond with</span>
             <div className="popup-cards">
               {responses.map((id) => (
-                <Card
-                  key={id}
-                  card={game.cards[id]}
-                  size="stack"
-                  glow
-                  selectable={false}
-                  chosen={false}
-                  onClick={() => sendAction({ action: 'selectCard', id })}
-                />
+                <div key={id} className="popup-card-slot" {...hover(id)}>
+                  <Card
+                    card={game.cards[id]}
+                    size="stack"
+                    glow
+                    selectable={false}
+                    chosen={false}
+                    onClick={() => sendAction({ action: 'selectCard', id })}
+                  />
+                </div>
               ))}
             </div>
           </div>
@@ -142,9 +156,22 @@ export function ResponsePopup() {
   );
 }
 
-function Target({ id, game }: { id: string; game: GameState }) {
+/** A permanent spell's stack text is just its name; then its rules text says more. */
+export function stackText(text: string, source: CardDto | undefined): string {
+  const bare = cleanText(text).trim();
+  if (source?.text && (bare === '' || bare === source.name)) return source.text;
+  return text;
+}
+
+function Target({ id, game, hover }: { id: string; game: GameState; hover: { onMouseEnter: () => void; onMouseLeave: () => void } }) {
   const card: CardDto | undefined = game.cards[id];
-  if (card) return <Card card={card} size="stack" glow={false} selectable={false} chosen={false} />;
+  if (card) {
+    return (
+      <div className="popup-card-slot" {...hover}>
+        <Card card={card} size="stack" glow={false} selectable={false} chosen={false} upright />
+      </div>
+    );
+  }
   const player = game.players.find((p) => p.id === id);
   if (player) return <span className="popup-target">{player.you ? 'You' : player.name}</span>;
   const stackItem = game.stack.find((s) => s.id === id);

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { client } from '../net/engineClient';
+import type { DeckSummary } from '../net/protocol';
 import { useStore } from '../state/store';
 
 const panel = { background: '#121c31', border: '1px solid #24324f', borderRadius: 8, padding: 16 } as const;
@@ -10,6 +11,8 @@ const button = {
 export function Decks() {
   const decks = useStore((s) => s.lobby?.decks ?? []);
   const lastImport = useStore((s) => s.lastImport);
+  // Rename/delete problems come back from the engine as plain errors.
+  const engineError = useStore((s) => s.lastError);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -72,7 +75,10 @@ export function Decks() {
 
   return (
     <div style={{ padding: 32, maxWidth: 820, margin: '0 auto', display: 'grid', gap: 16 }}>
-      <h1 style={{ color: '#d4a64a', margin: 0 }}>Your decks</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ color: '#d4a64a', margin: 0 }}>Your decks</h1>
+        <button style={quiet} onClick={() => useStore.getState().setScreen('matches')}>Saved matches</button>
+      </div>
       <div style={panel}>
         <textarea
           aria-label="Deck import"
@@ -114,16 +120,77 @@ export function Decks() {
       </div>
       <div style={panel}>
         {decks.length === 0 && <p style={{ margin: 0, opacity: 0.7 }}>No decks yet. Import one above.</p>}
-        {decks.map((d) => (
-          <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #24324f' }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{d.name}</div>
-              <div style={{ opacity: 0.7, fontSize: 13 }}>{d.commanders.join(' / ')}</div>
-            </div>
-            <button style={button} onClick={() => play(d.id)}>Play</button>
-          </div>
-        ))}
+        {engineError && <p role="alert" style={{ color: '#e5736a', marginTop: 0 }}>{engineError}</p>}
+        {decks.map((d) => <DeckRow key={d.id} deck={d} onPlay={() => play(d.id)} />)}
       </div>
+    </div>
+  );
+}
+
+const quiet = { ...button, background: 'transparent', color: '#e8ecf4', border: '1px solid #33405e', fontWeight: 500 } as const;
+const danger = { ...button, background: '#c0473d', color: '#fff' } as const;
+const field = {
+  background: '#0b1322', color: '#e8ecf4', border: '1px solid #24324f', borderRadius: 6, padding: '6px 8px', font: 'inherit', minWidth: 0, flex: 1,
+} as const;
+
+/** One saved deck: play it, rename it in place, or delete it after a confirmation. */
+function DeckRow({ deck, onPlay }: { deck: DeckSummary; onPlay: () => void }) {
+  const [mode, setMode] = useState<'view' | 'rename' | 'delete'>('view');
+  const [name, setName] = useState(deck.name);
+  const trimmed = name.trim();
+
+  const rename = () => {
+    if (!trimmed || trimmed === deck.name) {
+      setMode('view');
+      return;
+    }
+    useStore.getState().dismissError();
+    client.send({ type: 'renameDeck', deckId: deck.id, name: trimmed });
+    setMode('view');
+  };
+
+  const row = { display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #24324f' } as const;
+  if (mode === 'rename') {
+    return (
+      <div style={row}>
+        <input
+          aria-label={`New name for ${deck.name}`}
+          style={field}
+          value={name}
+          maxLength={100}
+          autoFocus
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') rename();
+            if (e.key === 'Escape') { setName(deck.name); setMode('view'); }
+          }}
+        />
+        <button style={button} disabled={!trimmed} onClick={rename}>Save</button>
+        <button style={quiet} onClick={() => { setName(deck.name); setMode('view'); }}>Cancel</button>
+      </div>
+    );
+  }
+  return (
+    <div style={row}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 600 }}>{deck.name}</div>
+        <div style={{ opacity: 0.7, fontSize: 13 }}>{deck.commanders.join(' / ')}</div>
+      </div>
+      {mode === 'delete' ? (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 13 }}>Delete this deck?</span>
+          <button style={danger} onClick={() => { useStore.getState().dismissError(); client.send({ type: 'deleteDeck', deckId: deck.id }); }}>
+            Delete
+          </button>
+          <button style={quiet} onClick={() => setMode('view')}>Keep</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={quiet} aria-label={`Rename ${deck.name}`} onClick={() => { setName(deck.name); setMode('rename'); }}>Rename</button>
+          <button style={quiet} aria-label={`Delete ${deck.name}`} onClick={() => setMode('delete')}>Delete</button>
+          <button style={button} onClick={onPlay}>Play</button>
+        </div>
+      )}
     </div>
   );
 }

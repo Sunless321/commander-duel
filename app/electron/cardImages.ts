@@ -29,16 +29,19 @@ export class RateLimitedError extends Error {
 }
 
 const NEGATIVE_TTL_MS = 5 * 60_000;
+/** Rate limits and timeouts say nothing about the image itself: retry those soon. */
+const TRANSIENT_TTL_MS = 15_000;
 
 /**
- * Serializes fetches at least minGapMs apart (Scryfall etiquette), shares in-flight work per url,
- * abandons a fetch after timeoutMs so one stall cannot wedge the queue, and remembers failures for
- * five minutes so remounting cards do not retry-storm.
+ * Starts fetches at least minGapMs apart (Scryfall etiquette) but lets them overlap, so one slow image
+ * never holds up the rest; shares in-flight work per url, abandons a fetch after timeoutMs, and remembers
+ * failures (five minutes, or briefly for rate limits and timeouts) so remounting cards do not retry-storm.
  */
 export class FetchQueue {
   private readonly inflight = new Map<string, Promise<Buffer>>();
-  private readonly failedAt = new Map<string, number>();
-  private tail: Promise<unknown> = Promise.resolve();
+  private readonly failedAt = new Map<string, { at: number; ttl: number }>();
+  /** Resolves when the previous fetch has been given its start slot. */
+  private gate: Promise<void> = Promise.resolve();
   private nextStart = 0;
 
   constructor(
@@ -52,13 +55,18 @@ export class FetchQueue {
     if (existing) return existing;
     const failed = this.failedAt.get(url);
     if (failed !== undefined) {
-      if (Date.now() - failed < NEGATIVE_TTL_MS) return Promise.reject(new Error('recently failed'));
+      if (Date.now() - failed.at < failed.ttl) return Promise.reject(new Error('recently failed'));
       this.failedAt.delete(url);
     }
-    const run = this.tail.then(async () => {
-      const wait = this.nextStart - Date.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    const slot = this.gate.then(async () => {
+      // Re-check after every wait: a 429 seen meanwhile pushes nextStart further out.
+      for (let wait = this.nextStart - Date.now(); wait > 0; wait = this.nextStart - Date.now()) {
+        await new Promise((r) => setTimeout(r, wait));
+      }
       this.nextStart = Date.now() + this.minGapMs;
+    });
+    this.gate = slot;
+    const run = slot.then(async () => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_, rej) => {
         timer = setTimeout(() => rej(new Error('fetch timeout')), this.timeoutMs);
@@ -72,7 +80,6 @@ export class FetchQueue {
         clearTimeout(timer);
       }
     });
-    this.tail = run.catch(() => undefined);
     const p = run.then(
       (data) => {
         this.inflight.delete(url);
@@ -80,7 +87,8 @@ export class FetchQueue {
       },
       (e) => {
         this.inflight.delete(url);
-        this.failedAt.set(url, Date.now());
+        const transient = e instanceof RateLimitedError || (e instanceof Error && e.message === 'fetch timeout');
+        this.failedAt.set(url, { at: Date.now(), ttl: transient ? TRANSIENT_TTL_MS : NEGATIVE_TTL_MS });
         throw e;
       },
     );

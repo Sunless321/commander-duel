@@ -19,6 +19,38 @@ describe('FetchQueue', () => {
     expect(times[2] - times[1]).toBeGreaterThanOrEqual(100);
   });
 
+  test('a slow fetch does not hold up the next one beyond the start gap', async () => {
+    vi.useFakeTimers();
+    const started: Record<string, number> = {};
+    const q = new FetchQueue(100, (u) => {
+      started[u] = Date.now();
+      return u === 'slow'
+        ? new Promise<Buffer>((r) => setTimeout(() => r(Buffer.from('s')), 5000))
+        : Promise.resolve(Buffer.from('f'));
+    });
+    const slow = q.get('slow');
+    const fast = q.get('fast');
+    await vi.advanceTimersByTimeAsync(150);
+    expect(await fast).toEqual(Buffer.from('f'));
+    expect(started.fast - started.slow).toBeGreaterThanOrEqual(100);
+    expect(started.fast - started.slow).toBeLessThan(1000);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await slow).toEqual(Buffer.from('s'));
+  });
+
+  test('a rate-limited url is retried after 15 s, not 5 minutes', async () => {
+    vi.useFakeTimers();
+    let n = 0;
+    const q = new FetchQueue(0, async () => {
+      if (n++ === 0) throw new RateLimitedError(0);
+      return Buffer.from('ok');
+    });
+    await expect(q.get('u')).rejects.toThrow('rate limited');
+    await expect(q.get('u')).rejects.toThrow('recently failed');
+    await vi.advanceTimersByTimeAsync(16_000);
+    await expect(q.get('u')).resolves.toEqual(Buffer.from('ok'));
+  });
+
   test('queue dedupes same url', async () => {
     const fetchFn = vi.fn(async () => Buffer.from('x'));
     const q = new FetchQueue(0, fetchFn);

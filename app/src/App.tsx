@@ -4,6 +4,8 @@ import type { DuelBridge, EngineEndpoint } from './net/protocol';
 import { Board } from './screens/Board';
 import { Decks } from './screens/Decks';
 import { GameOver } from './screens/GameOver';
+import { Matches } from './screens/Matches';
+import { Replay } from './screens/Replay';
 import { Setup } from './screens/Setup';
 import { useStore } from './state/store';
 
@@ -66,5 +68,7 @@ export function App() {
   if (screen === 'setup') return <Setup />;
   if (screen === 'board') return <Board />;
   if (screen === 'gameOver') return <GameOver />;
+  if (screen === 'matches') return <Matches />;
+  if (screen === 'replay') return <Replay />;
   return <Decks />;
 }

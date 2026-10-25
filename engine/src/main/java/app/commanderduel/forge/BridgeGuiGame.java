@@ -12,6 +12,9 @@ import forge.card.MagicColor;
 import forge.deck.CardPool;
 import forge.game.Game;
 import forge.game.GameEntityView;
+import forge.game.GameLog;
+import forge.game.GameLogEntry;
+import forge.game.GameLogEntryType;
 import forge.game.GameOutcome;
 import forge.game.GameView;
 import forge.game.card.CardView;
@@ -107,6 +110,12 @@ public class BridgeGuiGame extends NetworkGuiGame {
     private final AtomicInteger stateFailures = new AtomicInteger();
     private final AtomicBoolean gameOverSent = new AtomicBoolean();
     private volatile boolean gameEnded;
+
+    /** The game log being relayed, and how many of its entries were sent; both guarded by logLock. */
+    private final Object logLock = new Object();
+    private GameLog observedLog;
+    private int logSent;
+    private final AtomicBoolean logScheduled = new AtomicBoolean();
 
     private final Object promptLock = new Object();
     private String promptMessage = "";
@@ -512,6 +521,17 @@ public class BridgeGuiGame extends NetworkGuiGame {
         send0(m);
     }
 
+    /** The game thread died with {@code e}: say so, since the game will not move again (see Session). */
+    public void engineFault(Throwable e) {
+        if (gameEnded) {
+            return;
+        }
+        String where = e.getStackTrace().length > 0 ? " at " + e.getStackTrace()[0] : "";
+        sendError("The game engine hit an error and this game may be stuck (" + e.getClass().getSimpleName()
+                + (e.getMessage() == null ? "" : ": " + e.getMessage()) + where + "). "
+                + "If nothing happens, press Concede to leave the game. The details are saved in engine.log.");
+    }
+
     private void sendError(String message) {
         Map<String, Object> m = msg("error");
         m.put("message", message);
@@ -521,7 +541,64 @@ public class BridgeGuiGame extends NetworkGuiGame {
     @Override
     public void setGameView(GameView gameView) {
         super.setGameView(gameView);
+        GameView kept = getGameView(); // the first view is kept; later ones only update it
+        observeLog(kept == null ? null : kept.getGameLog());
         scheduleState();
+    }
+
+    // ---------------------------------------------------------------- game log
+
+    /** Entry types the play log leaves out: mana payments and phase changes would bury the moves. */
+    static boolean logged(GameLogEntryType type) {
+        return type != GameLogEntryType.MANA && type != GameLogEntryType.PHASE;
+    }
+
+    private void observeLog(GameLog log) {
+        synchronized (logLock) {
+            if (log == null || log == observedLog) {
+                return;
+            }
+            observedLog = log;
+            logSent = 0;
+        }
+        log.addObserver((o, arg) -> scheduleLog());
+        scheduleLog();
+    }
+
+    /** Forge adds entries on the game thread; they go out in batches from the scheduler. */
+    private void scheduleLog() {
+        if (logScheduled.compareAndSet(false, true)) {
+            scheduler.schedule(this::sendLog, STATE_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void sendLog() {
+        logScheduled.set(false);
+        List<Map<String, Object>> entries = new ArrayList<>();
+        synchronized (logLock) {
+            if (observedLog == null) {
+                return;
+            }
+            List<GameLogEntry> all = observedLog.getAllEntries();
+            if (all.size() < logSent) {
+                logSent = all.size(); // Forge rewound the log (undo): only later entries are new
+            }
+            for (GameLogEntry e : all.subList(logSent, all.size())) {
+                if (logged(e.type())) {
+                    Map<String, Object> w = new LinkedHashMap<>();
+                    w.put("kind", e.type().name());
+                    w.put("text", e.message());
+                    entries.add(w);
+                }
+            }
+            logSent = all.size();
+            if (entries.isEmpty()) {
+                return;
+            }
+            Map<String, Object> m = msg("log");
+            m.put("entries", entries);
+            send(m); // inside the lock, so batches keep their order
+        }
     }
 
     @Override

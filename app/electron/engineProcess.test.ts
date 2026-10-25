@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { engineArgs, parseReadyLine, startEngine } from './engineProcess';
 
@@ -12,6 +15,22 @@ describe('engineProcess', () => {
     await expect(
       startEngine({ javaPath: process.execPath, jarPath: 'x.jar', forgeDir: 'f', dataDir: 'd' }),
     ).rejects.toThrow(/exited before READY/);
+  });
+
+  test("the engine's stderr is saved to the log file and the previous run's log is kept", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cd-log-'));
+    const file = join(dir, 'logs', 'engine.log');
+    mkdirSync(join(dir, 'logs'));
+    writeFileSync(file, 'last run');
+    // node prints its "bad option" complaint to stderr and exits before READY
+    await expect(
+      startEngine({ javaPath: process.execPath, jarPath: 'x.jar', forgeDir: 'f', dataDir: 'd', logFile: file }),
+    ).rejects.toThrow(/exited before READY/);
+    await new Promise((r) => setTimeout(r, 200)); // let the stream flush
+    expect(readFileSync(join(dir, 'logs', 'engine.previous.log'), 'utf8')).toBe('last run');
+    const log = readFileSync(file, 'utf8');
+    expect(log).toMatch(/bad option/);
+    expect(log).toMatch(/\[engine exited: code \d+/);
   });
 
   test('engineArgs caps the heap and returns idle memory before -jar', () => {

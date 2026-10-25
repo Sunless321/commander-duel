@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { cleanText } from '../logic/cleanText';
 import { client } from '../net/engineClient';
 import type { AmountTarget, CardDto, RequestMsg, RequestOption } from '../net/protocol';
 import { useStore } from '../state/store';
@@ -29,8 +30,8 @@ export function RequestDialog() {
   return (
     <div className="modal-backdrop">
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <h2 id={titleId} className="modal-title">{request.title || 'Choose'}</h2>
-        {showMessage && <p className="modal-message">{request.message}</p>}
+        <h2 id={titleId} className="modal-title">{cleanText(request.title) || 'Choose'}</h2>
+        {showMessage && <p className="modal-message">{cleanText(request.message)}</p>}
         {error && <p role="alert" className="modal-error">{error}</p>}
         <Body key={request.requestId} request={request} cards={cards} answer={answer} />
       </div>
@@ -66,11 +67,11 @@ function Actions({ children }: { children: ReactNode }) {
 /** An option's face: its card when it names one in the game, otherwise its label. */
 function OptionFace({ option, cards }: { option: RequestOption; cards: Cards }) {
   const card = option.cardId ? cards[option.cardId] : undefined;
-  if (!card) return <>{option.label}</>;
+  if (!card) return <>{cleanText(option.label)}</>;
   return (
     <span className="option-card">
       <Card card={card} size="stack" glow={false} selectable={false} chosen={false} />
-      <span className="option-label">{option.label}</span>
+      <span className="option-label">{cleanText(option.label)}</span>
     </span>
   );
 }
@@ -144,7 +145,7 @@ function ButtonsBody({ request, cards, answer }: BodyProps) {
       <Actions>
         {request.options.map((o, i) => (
           <button key={o.id} type="button" className={`btn${i === def ? ' primary' : ''}`} onClick={() => answer({ optionIds: [o.id] })}>
-            {o.label}
+            {cleanText(o.label)}
           </button>
         ))}
         {request.min === 0 && (

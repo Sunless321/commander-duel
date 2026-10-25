@@ -32,6 +32,18 @@ test('Card selectable, chosen, tapped classes and size', () => {
   expect(html({ ...base, tapped: true })).toMatch(/\btapped\b/);
 });
 
+test('a card with an image still draws its text frame underneath, so it is never blank while loading', () => {
+  const out = html(base);
+  expect(out).toContain('card-text');
+  expect(out).toContain('Sol Ring');
+  // not shown until it has loaded
+  expect(out).not.toMatch(/<img[^>]*class="loaded"/);
+});
+
+test('upright draws a tapped card straight', () => {
+  expect(html({ ...base, tapped: true }, { upright: true })).not.toMatch(/\btapped\b/);
+});
+
 test('Card with image uses card:// url; without image shows text frame', () => {
   expect(html(base)).toContain('src="card://img?u=' + encodeURIComponent(base.imageUrl!).replace(/&/g, '&amp;'));
   const out = html({ ...base, imageUrl: null, name: 'Grizzly Bears', manaCost: '{1}{G}', typeLine: 'Creature — Bear', power: '2', toughness: '2' });

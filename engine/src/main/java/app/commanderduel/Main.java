@@ -36,6 +36,15 @@ public final class Main {
         Path dataDir = Path.of(data);
         ForgeBootstrap.init(Path.of(forge), dataDir);
         Session session = new Session(new DeckStore(dataDir.resolve("decks")));
+        // An uncaught error kills its thread silently apart from this trace (which the app saves to engine.log).
+        // On a Forge game thread ("Game-<n>") that can be the game loop itself, so the player is told too.
+        Thread.setDefaultUncaughtExceptionHandler((thread, e) -> {
+            System.err.println("uncaught error on thread " + thread.getName() + ":");
+            e.printStackTrace();
+            if (thread.getName().startsWith("Game")) {
+                session.onGameThreadError(e);
+            }
+        });
         EngineServer server = new EngineServer(0, token, session);
         server.startAndWait();
         protocolOut.println("READY port=" + server.getPort());

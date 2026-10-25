@@ -47,9 +47,75 @@
 .opp-field .field-row { gap: 6px; }
 .opp-field .slot, .opp-field .card.field { width: 52px; height: 73px; }
 .opp-field .battlefield .slot.tapped { width: 73px; }
+/* Room at the top for the "View board" button, so it never covers a card. */
+.opp-field { position: relative; cursor: zoom-in; padding-top: 30px; }
+.opp-board-btn {
+  position: absolute; top: 5px; right: 8px; z-index: 1; padding: 3px 8px; border-radius: 999px; cursor: pointer;
+  background: rgba(11, 19, 34, 0.9); color: var(--gold); border: 1px solid var(--gold); font: 600 11px Inter, system-ui, sans-serif;
+}
+.opp-board-btn:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+
+/* ---- incoming damage: in the flow above your row, so it never covers a card you may need to click */
+.incoming {
+  flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 14px; border-radius: 10px;
+  background: #3a1a1a; border: 1px solid #e5736a; color: #ffd2cc; box-shadow: 0 0 16px rgba(229, 115, 106, 0.35);
+  max-height: 22vh; overflow: auto;
+}
+.incoming.lethal { background: #5a1414; border-color: #ff5a4a; animation: incoming-pulse 1.2s ease-in-out infinite; }
+@keyframes incoming-pulse { 50% { box-shadow: 0 0 26px rgba(255, 90, 74, 0.7); } }
+.incoming-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.incoming-head { font-weight: 700; font-size: 15px; }
+.incoming-head::before { content: '⚠ '; }
+.incoming-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.incoming-chip {
+  padding: 2px 8px; border-radius: 999px; font-size: 12px; background: rgba(11, 19, 34, 0.6); border: 1px solid #e5736a; cursor: default;
+}
+.incoming-chip.blocked { opacity: 0.6; border-color: #8fd18f; }
+.incoming-chip em { font-style: normal; color: #f2d58a; }
+.incoming-text { font-size: 13px; color: #ffe3de; }
+
+/* ---- play log (takes the side column's free space) */
+.play-log { display: flex; flex-direction: column; min-height: 0; flex: none; }
+.play-log.open { flex: 1 1 0; min-height: 90px; }
+.play-log-head {
+  display: flex; align-items: center; gap: 8px; padding: 0; background: none; border: none; color: inherit; cursor: pointer;
+}
+.play-log-head .col-title { margin: 0; }
+.play-log-count { font-size: 11px; color: var(--muted); }
+.play-log-caret { margin-left: auto; color: var(--muted); }
+.play-log:not(.open) + * { margin-top: auto; }
+.play-log-list {
+  list-style: none; margin: 6px 0 0; padding: 6px 8px; flex: 1 1 0; min-height: 0; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 3px;
+  font-size: 12px; line-height: 1.35; color: #c9d4e8;
+}
+.log-line { overflow-wrap: anywhere; }
+.log-turn { margin-top: 6px; color: var(--gold); font-weight: 700; }
+.log-damage { color: #ff9b91; }
+.log-damage.you, .log-life.you { color: #ff6f61; font-weight: 700; }
+.log-life { color: #ffc1b8; }
+.log-combat { color: #f2c48a; }
+.log-stack-add { color: #cfe8ff; }
+.log-empty { color: var(--muted); font-style: italic; }
+
+/* ---- an opponent's whole board */
+.modal.opp-board { width: min(1280px, 96vw); max-height: 92vh; }
+.opp-board-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; }
+.opp-board-stats { font-size: 14px; color: var(--muted, #9fb0cc); }
+.opp-board-stats b { color: #e8ecf4; }
+.opp-board-body { display: flex; gap: 18px; min-height: 0; }
+.opp-board-groups { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.opp-board-group-title { margin: 0 0 6px; font: 600 14px Inter, system-ui, sans-serif; color: #c9b8f0; }
+.opp-board-cards { display: flex; flex-wrap: wrap; gap: 10px; }
+.opp-board-cards .slot, .opp-board-cards .card.field { width: 100px; height: 140px; }
+.opp-board-cards .card.field .card-text { font-size: 11px; }
+.opp-board-zoom { width: 260px; flex: none; position: sticky; top: 0; align-self: flex-start; }
+.opp-board-zoom .card.hand { width: 260px; height: 362px; border-radius: 12px; }
+.opp-board-foot { flex-grow: 1; align-self: center; }
+.badge.tap { color: #f2d58a; border-color: var(--gold, #d4a64a); }
 .command-mini { display: flex; gap: 6px; padding-right: 8px; border-right: 1px dashed #5b4a8a; }
 /* Three opponents: commander above the permanents so the field keeps its width. */
-.opponents.n3 .opp-field { flex-direction: column; padding: 6px 8px; }
+.opponents.n3 .opp-field { flex-direction: column; padding: 30px 8px 6px; }
 .opponents.n3 .command-mini { border-right: none; border-bottom: 1px dashed #5b4a8a; padding: 0 0 6px; }
 .opp-hand { display: flex; padding-left: 8px; margin-top: 2px; }
 .opp-hand .card { width: 16px; height: 22px; margin-left: -8px; border-radius: 2px; cursor: default; }
@@ -271,3 +337,38 @@
 .game-over-actions { display: flex; gap: 12px; }
 .game-over-error { margin: 0; color: #e5736a; }
 .panel-hit, .panel-head { min-width: 0; overflow: hidden; }
+
+/* ---- game over: save the recording */
+.game-over-save { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.game-over-hint { font-size: 13px; color: #9fb0cc; max-width: 460px; text-align: center; }
+
+/* ---- saved matches */
+.matches {
+  position: fixed; inset: 0; overflow: auto; box-sizing: border-box; padding: 32px max(16px, calc(50% - 420px));
+  background: #0b1322; color: #e8ecf4; font-family: Inter, system-ui, 'Segoe UI', sans-serif;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.matches-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.matches-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.matches-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px;
+  background: #121c31; border: 1px solid #24324f; border-radius: 10px;
+}
+.matches-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.matches-title { font-weight: 600; overflow-wrap: anywhere; }
+.matches-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.btn.danger { background: #c0473d; border-color: #c0473d; color: #fff; }
+
+/* ---- replay viewer */
+.replay-head { display: flex; flex-direction: column; gap: 2px; }
+.replay-title { font: 600 15px Cinzel, Georgia, serif; color: var(--gold); overflow-wrap: anywhere; }
+.replay-controls { display: flex; flex-direction: column; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+.replay-step { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.replay-label { font-weight: 700; color: var(--gold); }
+.replay-controls input[type='range'] { width: 100%; accent-color: #d4a64a; }
+.replay .card { cursor: default; }
+/* Replay side column: a smaller preview, so the turn's moves and the way back always fit. */
+.replay .preview .card.hand { width: 170px; height: 237px; }
+.replay .preview { display: flex; justify-content: center; flex: none; }
+.replay .board-side > .btn { flex: none; }
+.replay .play-log.open { min-height: 120px; }
