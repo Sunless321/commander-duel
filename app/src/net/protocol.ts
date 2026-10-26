@@ -48,7 +48,8 @@ export interface CardDto {
 
 export interface StackItemDto {
   id: string;
-  text: string;
+  /** Null when you can't see the source card (the engine hides what it would reveal). */
+  text: string | null;
   sourceCardId: string | null;
   activatorId: string | null;
   targetIds: string[];

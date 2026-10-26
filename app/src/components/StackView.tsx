@@ -1,4 +1,4 @@
-import { cleanText } from '../logic/cleanText';
+import { cleanText, HIDDEN_STACK_TEXT } from '../logic/cleanText';
 import type { GameState } from '../net/protocol';
 import { Card } from './Card';
 
@@ -27,7 +27,7 @@ export function StackView({ game, selectable, chosen, onClick }: StackViewProps)
                 <span className="stack-text">
                   {i === 0 && <span className="stack-top">Top · </span>}
                   {activator && <span className="stack-who">{activator.name}: </span>}
-                  {cleanText(item.text)}
+                  {item.text ? cleanText(item.text) : HIDDEN_STACK_TEXT}
                 </span>
               </button>
             </li>

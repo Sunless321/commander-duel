@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { cleanText } from '../logic/cleanText';
+import { cleanText, HIDDEN_STACK_TEXT } from '../logic/cleanText';
 import { decideResponse, respondCards } from '../logic/respondPolicy';
 import { sendAction } from '../net/sendAction';
 import type { CardDto, GameState } from '../net/protocol';
@@ -157,7 +157,8 @@ export function ResponsePopup() {
 }
 
 /** A permanent spell's stack text is just its name; then its rules text says more. */
-export function stackText(text: string, source: CardDto | undefined): string {
+export function stackText(text: string | null, source: CardDto | undefined): string {
+  if (text == null) return source?.text ?? HIDDEN_STACK_TEXT;
   const bare = cleanText(text).trim();
   if (source?.text && (bare === '' || bare === source.name)) return source.text;
   return text;
@@ -175,5 +176,5 @@ function Target({ id, game, hover }: { id: string; game: GameState; hover: { onM
   const player = game.players.find((p) => p.id === id);
   if (player) return <span className="popup-target">{player.you ? 'You' : player.name}</span>;
   const stackItem = game.stack.find((s) => s.id === id);
-  return stackItem ? <span className="popup-target">{stackItem.text}</span> : null;
+  return stackItem ? <span className="popup-target">{stackItem.text ?? HIDDEN_STACK_TEXT}</span> : null;
 }

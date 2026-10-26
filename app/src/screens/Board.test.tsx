@@ -376,3 +376,17 @@ test('a stale-action rejection (a double click the engine dropped) shows no erro
   act(() => useStore.getState().handle({ type: 'rejected', requestId: null, reason: 'unknown card: c99' }));
   expect(useStore.getState().lastRejection?.reason).toBe('unknown card: c99');
 });
+
+test('a stack item whose source you cannot see (no text from the engine) still renders the board', () => {
+  // Real game: a lethal two-player swing put Wasitora's trigger on the stack with a hidden source; text was null.
+  act(() => useStore.getState().handle({
+    type: 'state', seq: 1,
+    state: stateWith((g) => {
+      g.cards.c9 = card('c9', 'p1', 'Battlefield', { hidden: true, name: null });
+      g.stack = [{ id: 's1', text: null, sourceCardId: 'c9', activatorId: 'p1', targetIds: [] }];
+    }),
+  }));
+  render(<Board />);
+  const stack = screen.getByRole('region', { name: 'Stack' });
+  expect(stack.textContent).toContain('A hidden spell or ability');
+});

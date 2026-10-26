@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { fetchArchidekt, parseDeckId, parseTextList } from './archidekt';
 import { registerCardProtocol, registerCardScheme } from './cardImages';
-import { startEngine, type EngineOptions, type RunningEngine } from './engineProcess';
+import { openEngineLog, startEngine, type EngineOptions, type RunningEngine } from './engineProcess';
 import { deleteRecording, listRecordings, loadRecording, saveRecording } from './recordings';
 
 // Must happen before app is ready so userData resolves to %APPDATA%\Commander Duel.
@@ -72,7 +72,16 @@ function createWindow(): void {
     },
   });
   win.setMenuBarVisibility(false);
-  win.webContents.on('console-message', (_e, _level, message) => console.log('[renderer]', message));
+  // Screen errors go to logs\ui.log (the last run's kept as ui.previous.log), so a broken screen leaves a trace.
+  const uiLog = openEngineLog(join(app.getPath('userData'), 'logs', 'ui.log'));
+  uiLog?.on('error', () => undefined);
+  win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    console.log('[renderer]', message);
+    if (level >= 3) uiLog?.write(`${new Date().toISOString()} ${message} (${sourceId}:${line})\n`);
+  });
+  win.webContents.on('render-process-gone', (_e, d) =>
+    uiLog?.write(`${new Date().toISOString()} renderer gone: ${d.reason} (exit ${d.exitCode})\n`),
+  );
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(join(__dirname, '../renderer/index.html'));
 }

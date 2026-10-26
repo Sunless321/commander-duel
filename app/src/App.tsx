@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { client } from './net/engineClient';
 import type { DuelBridge, EngineEndpoint } from './net/protocol';
 import { Board } from './screens/Board';
@@ -7,7 +8,7 @@ import { GameOver } from './screens/GameOver';
 import { Matches } from './screens/Matches';
 import { Replay } from './screens/Replay';
 import { Setup } from './screens/Setup';
-import { useStore } from './state/store';
+import { useStore, type Screen } from './state/store';
 
 declare global {
   interface Window {
@@ -63,8 +64,13 @@ export function App() {
     };
   }, []);
 
+  // Inside App, so a Retry redraws the screen without reconnecting to the engine.
+  return <ErrorBoundary>{body(screen, lobby != null)}</ErrorBoundary>;
+}
+
+function body(screen: Screen, hasLobby: boolean) {
   if (screen === 'engineStopped') return <EngineStopped />;
-  if (!lobby) return <div style={{ padding: 32 }}>Starting engine…</div>;
+  if (!hasLobby) return <div style={{ padding: 32 }}>Starting engine…</div>;
   if (screen === 'setup') return <Setup />;
   if (screen === 'board') return <Board />;
   if (screen === 'gameOver') return <GameOver />;

@@ -254,3 +254,10 @@ test('auto-pass needs the state the prompt was stamped with; a newer state means
   act(() => useStore.setState({ prompt: pr(2, 'B') }));
   expect(sent).toEqual([]);
 });
+
+test('an opponent stack item with no text (hidden source) still shows the popup', () => {
+  setup(game({ stack: [{ id: 's1', text: null, sourceCardId: null, activatorId: 'p2', targetIds: [] }] }), ['c1']);
+  render(<ResponsePopup />);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(screen.getByText('A hidden spell or ability')).toBeTruthy();
+});

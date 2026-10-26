@@ -16,7 +16,7 @@ export interface IncomingThreat {
   id: string;
   name: string;
   who: string;
-  text: string;
+  text: string | null;
   /** The stack item targets you directly (otherwise one of your permanents). */
   targetsYou: boolean;
   targetCardIds: string[];
